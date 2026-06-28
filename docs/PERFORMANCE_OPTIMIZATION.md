@@ -8,6 +8,137 @@ This document outlines a comprehensive review of the PASApipeline codebase with 
 3. Algorithm improvements suitable for Rust implementation
 4. Implemented optimizations and performance testing infrastructure
 
+## Rust Migration - Implemented Tiers
+
+### Tier 1: cdna_alignment_assembler with Interval Tree (IMPLEMENTED)
+
+**Location**: `pasa_rust/pasa-assembler/`
+
+The original C++ `determine_compatibilities_and_encapsulations()` method uses an
+O(n²) all-vs-all comparison. For large numbers of alignments (thousands), this
+becomes the primary bottleneck.
+
+**Optimization**: Replaced the O(n²) pairwise comparison with an interval tree
+that enables O(n log n + k) overlap queries, where k is the number of actually
+overlapping pairs. For genomic alignments where most don't overlap, this reduces
+the number of `canMerge` calls from O(n²) to O(k).
+
+```rust
+// Interval tree built from sorted alignment coordinates
+struct IntervalTree {
+    sorted_starts: Vec<(i32, usize)>,  // Sorted by lend
+}
+
+// For each alignment, query the interval tree to find overlapping alignments
+// Only perform the full canMerge check on overlapping pairs
+fn determine_compatibilities_and_encapsulations(&mut self) {
+    let interval_tree = IntervalTree::new(&self.alignments);
+    for i in 0..self.num_alignments {
+        let candidates = interval_tree.query_overlaps(
+            &self.alignments, self.alignments[i].get_coords()
+        );
+        for &j in &candidates {
+            if j <= i { continue; }
+            if self.can_merge(i, j) { /* ... */ }
+        }
+    }
+}
+```
+
+### Tier 2: Lobject Containment Tracking with Bitset (IMPLEMENTED)
+
+**Location**: `pasa_rust/pasa-assembler/src/lobject.rs`
+
+The original C++ `Lobject` uses `vector<bool>` for containment tracking, which
+is a packed bit representation but with poor cache locality and no SIMD
+exploitation.
+
+**Optimization**: Replaced `vector<bool>` with a custom bitset backed by
+`Vec<u64>`. The key algorithmic improvement is in `num_unique_contained`:
+instead of iterating bit-by-bit in O(n), we use bitwise XOR + hardware popcount
+to compute the result in O(n/64) with 64 bits processed per word.
+
+```rust
+pub fn num_unique_contained(&self, other: &Lobject) -> i32 {
+    let mut num = 0i32;
+    for i in 0..min_words {
+        // self_word & !other_word → bits in self but not in other
+        // .count_ones() → hardware popcount instruction
+        let diff = self.contained_cdna_indices[i] & !other.contained_cdna_indices[i];
+        num += diff.count_ones() as i32;
+    }
+    num
+}
+```
+
+### Tier 4: slclust with HashSet-Based Duplicate Detection (IMPLEMENTED)
+
+**Location**: `pasa_rust/slclust/`
+
+The original C++ `Graph::addLinkedNode()` uses a linear scan through the
+adjacency list to check for duplicates, making it O(degree) per edge addition.
+
+**Optimization**: Replaced the `vector<Graphnode*>` adjacency list with
+`HashSet<usize>` for O(1) average-case duplicate detection. Also replaced the
+recursive DFS (which required `ulimit -s unlimited` for large clusters) with an
+iterative DFS using an explicit stack.
+
+```rust
+pub struct Graph {
+    nodes: Vec<GraphNode>,
+    node_lookup: HashMap<String, usize>,  // O(1) lookup vs O(log n)
+}
+
+struct GraphNode {
+    name: String,
+    neighbors: HashSet<usize>,  // O(1) dedup vs O(degree) linear scan
+    marked: bool,
+}
+
+// Iterative DFS (eliminates stack overflow risk)
+fn print_clusters(&mut self) {
+    for start in 0..self.nodes.len() {
+        if self.nodes[start].marked { continue; }
+        let mut stack = vec![start];
+        while let Some(idx) = stack.pop() {
+            if self.nodes[idx].marked { continue; }
+            self.nodes[idx].marked = true;
+            for &neighbor in &self.nodes[idx].neighbors {
+                if !self.nodes[neighbor].marked {
+                    stack.push(neighbor);
+                }
+            }
+        }
+    }
+}
+```
+
+### Tier 3: cdbyank_rust + faidx_rust (IMPLEMENTED)
+
+**Location**: `pasa_rust/cdbtools/`
+
+Two Rust CLI tools replace the C++ `cdbyank` with modern, efficient I/O:
+
+1. **`cdbyank_rust`** — Drop-in replacement for C++ `cdbyank`
+   - Reads CDB `.cidx` index format (backward compatible with `cdbfasta`)
+   - In-memory hash lookup using djb2 algorithm (matches C++ hash)
+   - Single `read` syscall per record (vs byte-by-byte in C++)
+   - Supports: `-a` (fetch by accession), `-l` (list keys), `-n` (count)
+
+2. **`faidx_rust`** — Preferred alternative using samtools `.fai` index
+   - Reads samtools `.fai` plain-text index format
+   - Supports full sequence retrieval and sub-range extraction
+   - `faidx_rust genome.fa chr1` → full sequence
+   - `faidx_rust genome.fa chr1:1000-2000` → sub-range
+
+**Perl Integration** (`PerlLib/CdbTools.pm`):
+- `cdbyank()` auto-detects `cdbyank_rust` in PATH, falls back to C++ `cdbyank`
+- `get_seq()` — new API using `faidx_rust` with samtools `.fai` index
+- `get_seq_range()` — sub-range extraction via `faidx_rust`
+- Auto-creates `.fai` index via `samtools faidx` if missing
+
+**Verified**: Output identical to C++ `cdbyank` for all test cases.
+
 ## Performance Testing
 
 A performance test suite has been created at `PerlLib/perf_tests.pl`.
@@ -15,6 +146,11 @@ A performance test suite has been created at `PerlLib/perf_tests.pl`.
 Run with:
 ```bash
 perl PerlLib/perf_tests.pl [ITERATIONS]
+```
+
+Rust component tests:
+```bash
+cd pasa_rust && cargo test --release
 ```
 
 ## Implemented Optimizations
