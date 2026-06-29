@@ -131,11 +131,11 @@ foreach my $result (@results) {
             print "Sorry, no assemblies for cluster $cluster_id.  No composite cdna's must have validated.\n";
             next;
         }
+
+        my %align_id_to_obj = &Ath1_cdnas::batch_create_alignment_objs_by_id($dbproc, \@assemblies, $seq_ref);
         my @alignment_objs;
         foreach my $align_id (@assemblies) {
-                        
-            my $alignment_obj = Ath1_cdnas::create_alignment_obj($dbproc, $align_id, $seq_ref);
-
+            my $alignment_obj = $align_id_to_obj{$align_id};
             push (@alignment_objs, $alignment_obj);
         }
         

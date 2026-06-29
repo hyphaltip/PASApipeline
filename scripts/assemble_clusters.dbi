@@ -196,11 +196,14 @@ sub assemble_transcripts_on_scaffold {
         }
         
         my @alignments;
+        my @align_ids = map { $_->[1] } @results;
+        my %align_id_to_obj = &Ath1_cdnas::batch_create_alignment_objs_by_id($dbproc, \@align_ids, \$sequence);
+        
         foreach my $result (@results) {
             my ($cdna_acc, $align_id, $align_lend, $score) = @$result;
             print "cdna_acc: $cdna_acc\talign_id: $align_id\n";
             
-            my $alignment_obj = &Ath1_cdnas::create_alignment_obj($dbproc, $align_id, \$sequence);
+            my $alignment_obj = $align_id_to_obj{$align_id};
             $alignment_obj->set_acc($cdna_acc);
             my $aligned_orient = $alignment_obj->get_orientation();
             my $spliced_orient = $alignment_obj->get_spliced_orientation();
