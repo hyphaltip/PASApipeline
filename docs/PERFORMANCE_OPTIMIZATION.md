@@ -468,6 +468,14 @@ Both functions set all fields that `create_alignment_obj()` sets: `align_acc`, `
 | `annotation_updates` | `(compare_id)` | `WHERE compare_id = ?` for update lookups |
 | `status_link` | `(compare_id, cdna_acc)` | `WHERE compare_id = ? AND cdna_acc = ?` for status joins |
 
+### 5. SQL Placeholder Conversion
+
+**Files**: 13 pipeline scripts including `cDNA_annotation_comparer.dbi`, `subcluster_loader.dbi`, `dump_valid_annot_updates.dbi`, `comprehensive_alt_splice_report.dbi`, `validate_alignments_in_db.dbi`, `subcluster_builder.dbi`, `classify_alt_splice_isoforms.dbi`, `set_spliced_orient_transcribed_orient.dbi`, `populate_mysql_assembly_alignment_field.dbi`, `import_spliced_alignments.dbi`, `assemble_clusters.dbi`, `assign_clusters_by_stringent_alignment_overlap.dbi`, `assign_clusters_by_gene_intergene_overlap.dbi`
+
+**Issue**: Many scripts interpolated Perl variables directly into SQL strings (e.g., `"WHERE compare_id = $compare_id"`). This is vulnerable to SQL injection and prevents DBI from caching prepared statements.
+
+**Fix**: Converted all interpolated SQL variables to DBI `?` placeholders, passing the values as parameters to `do_sql_2D()`, `RunMod()`, or `first_result_sql()`. This enables prepared statement caching and eliminates SQL injection risk.
+
 ## Benchmarking Infrastructure
 
 Created `PerlLib/perf_tests.pl` with tests for:
