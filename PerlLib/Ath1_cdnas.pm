@@ -530,5 +530,94 @@ sub load_CDNA_alignment_obj {
 }
 
 
+####
+sub batch_create_alignment_objs {
+    my ($dbproc, $align_accs_aref) = @_;
+
+    return () unless @$align_accs_aref;
+
+    my @acc_list = map { "'$_'" } @$align_accs_aref;
+    my $acc_csv = join(",", @acc_list);
+
+    # Single batch query: get all alignment data including genome_acc
+    my $query = qq {
+        select al.align_acc, al.align_id, al.spliced_orient, al.validate, al.prog,
+               a.lend, a.rend, a.mlend, a.mrend, a.orient, a.per_id,
+               ci.id, ci.cdna_acc, ci.length, ci.is_fli, ci.header,
+               c.annotdb_asmbl_id
+            from align_link al, alignment a, cdna_info ci, clusters c
+            where al.align_acc in ($acc_csv)
+            and al.align_id = a.align_id
+            and al.cdna_info_id = ci.id
+            and al.cluster_id = c.cluster_id
+            order by al.align_acc
+    };
+    my @results = &DB_connect::do_sql_2D($dbproc, $query);
+
+    # Group segments by align_acc
+    my %acc_to_segments;
+    my %acc_to_meta;
+    foreach my $row (@results) {
+        my ($align_acc, $align_id, $spliced_orient, $validate, $prog,
+            $lend, $rend, $mlend, $mrend, $orient, $per_id,
+            $cdna_id, $cdna_acc, $cdna_length, $is_fli, $header,
+            $genome_acc) = @$row;
+
+        $acc_to_meta{$align_acc} ||= {
+            align_id       => $align_id,
+            spliced_orient => $spliced_orient,
+            validate       => $validate,
+            prog           => $prog,
+            cdna_id        => $cdna_id,
+            cdna_acc       => $cdna_acc,
+            cdna_length    => $cdna_length,
+            is_fli         => $is_fli,
+            header         => $header,
+            genome_acc     => $genome_acc,
+        };
+
+        if ($orient eq '-') {
+            ($lend, $rend) = ($rend, $lend);
+        }
+        my $seg = CDNA::Alignment_segment->new($lend, $rend, $mlend, $mrend, $per_id);
+        push @{$acc_to_segments{$align_acc}}, $seg;
+    }
+
+    # Create alignment objects
+    my %acc_to_alignment;
+    for my $align_acc (keys %acc_to_segments) {
+        my $meta = $acc_to_meta{$align_acc};
+        my @segs = @{$acc_to_segments{$align_acc}};
+
+        my $alignment = CDNA::CDNA_alignment->new($meta->{cdna_length}, \@segs, undef);
+        $alignment->set_align_acc($align_acc);
+        $alignment->set_cdna_acc($meta->{cdna_acc});
+        $alignment->set_fli_status($meta->{is_fli});
+        $alignment->set_cdna_id($meta->{cdna_id});
+        $alignment->{prog} = $meta->{prog};
+        $alignment->{genome_acc} = $meta->{genome_acc};
+
+        if ($meta->{header}) {
+            $alignment->set_title($meta->{header});
+        }
+
+        my $computed_orient = $alignment->get_orientation();
+        unless ($computed_orient =~ /[\+\-]/) {
+            $alignment->set_orientation('+');
+        }
+
+        my $spliced_orient = $meta->{spliced_orient};
+        if ($spliced_orient && $spliced_orient ne '?') {
+            $alignment->set_spliced_orientation($spliced_orient);
+            $alignment->force_spliced_validation($spliced_orient);
+        }
+
+        $acc_to_alignment{$align_acc} = $alignment;
+    }
+
+    return %acc_to_alignment;
+}
+
+
 1; #EOM.
 
