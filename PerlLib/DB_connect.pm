@@ -12,10 +12,6 @@ use Carp;
 use strict;
 use Data::Dumper;
 
-use threads;
-use threads::shared;
-my $LOCKVAR :shared;
-
 
 our @ISA = qw(Exporter);
 
@@ -172,13 +168,9 @@ sub do_sql_2D {
         do {
             $QUERYFAIL = 0; #initialize
             eval {
-                {
-                    lock $LOCKVAR;
-                    
-                    $statementHandle->execute(@values);
-                    while ( @row = $statementHandle->fetchrow_array() ) {
-                        push(@results,[@row]);
-                    }
+                $statementHandle->execute(@values);
+                while ( @row = $statementHandle->fetchrow_array() ) {
+                    push(@results,[@row]);
                 }
             };
             ## exception handling code:
@@ -215,12 +207,9 @@ sub RunMod {
         return;
     }
     eval {
-        {
-            lock $LOCKVAR;
-            my $sth = $dbproc->{dbh}->prepare_cached($query);
-            $sth->execute(@values);
-            $sth->finish;
-        }
+        my $sth = $dbproc->{dbh}->prepare_cached($query);
+        $sth->execute(@values);
+        $sth->finish;
     };
     if ($@) {
         if ($DBI::errstr =~ /server has gone away|Lost connection/) {

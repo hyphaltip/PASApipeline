@@ -66,15 +66,15 @@ sub build_clusters {
     system "touch $clusterfile";
     unless (-w $clusterfile) { die "Can't write $clusterfile";}
     
-    ## Prefer slclust_rust (iterative DFS, no ulimit needed)
-    ## Fall back to C++ slclust with ulimit -s unlimited for recursive DFS
+    ## Prefer C++ slclust (faster at all tested scales)
+    ## Fall back to slclust_rust (iterative DFS, no ulimit needed)
     my $cmd;
-    if ($SLCLUST_RUST && -x $SLCLUST_RUST) {
+    if ($SLCLUST && -x $SLCLUST) {
+        $cmd = "ulimit -s unlimited 2>/dev/null; $SLCLUST < $pairfile > $clusterfile";
+    } elsif ($SLCLUST_RUST && -x $SLCLUST_RUST) {
         $cmd = "$SLCLUST_RUST < $pairfile > $clusterfile";
-    } elsif ($SLCLUST && -x $SLCLUST) {
-        $cmd = "ulimit -s unlimited && $SLCLUST < $pairfile > $clusterfile";
     } else {
-        die "ERROR: Neither slclust_rust nor slclust found in PATH";
+        die "ERROR: Neither slclust nor slclust_rust found in PATH";
     }
     
     my $ret = system ($cmd);

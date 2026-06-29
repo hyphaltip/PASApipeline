@@ -71,6 +71,32 @@ pub fn num_unique_contained(&self, other: &Lobject) -> i32 {
 }
 ```
 
+### Tier 3: cdbyank_rust + faidx_rust (IMPLEMENTED)
+
+**Location**: `pasa_rust/cdbtools/`
+
+Two Rust CLI tools replace the C++ `cdbyank` with modern, efficient I/O:
+
+1. **`cdbyank_rust`** — Drop-in replacement for C++ `cdbyank`
+   - Reads CDB `.cidx` index format (backward compatible with `cdbfasta`)
+   - In-memory hash lookup using djb2 algorithm (matches C++ hash)
+   - Single `read` syscall per record (vs byte-by-byte in C++)
+   - Supports: `-a` (fetch by accession), `-l` (list keys), `-n` (count)
+
+2. **`faidx_rust`** — Preferred alternative using samtools `.fai` index
+   - Reads samtools `.fai` plain-text index format
+   - Supports full sequence retrieval and sub-range extraction
+   - `faidx_rust genome.fa chr1` → full sequence
+   - `faidx_rust genome.fa chr1:1000-2000` → sub-range
+
+**Perl Integration** (`PerlLib/CdbTools.pm`):
+- `cdbyank()` auto-detects `cdbyank_rust` in PATH, falls back to C++ `cdbyank`
+- `get_seq()` — new API using `faidx_rust` with samtools `.fai` index
+- `get_seq_range()` — sub-range extraction via `faidx_rust`
+- Auto-creates `.fai` index via `samtools faidx` if missing
+
+**Verified**: Output identical to C++ `cdbyank` for all test cases.
+
 ### Tier 4: slclust with HashSet-Based Duplicate Detection (IMPLEMENTED)
 
 **Location**: `pasa_rust/slclust/`
@@ -113,31 +139,11 @@ fn print_clusters(&mut self) {
 }
 ```
 
-### Tier 3: cdbyank_rust + faidx_rust (IMPLEMENTED)
-
-**Location**: `pasa_rust/cdbtools/`
-
-Two Rust CLI tools replace the C++ `cdbyank` with modern, efficient I/O:
-
-1. **`cdbyank_rust`** — Drop-in replacement for C++ `cdbyank`
-   - Reads CDB `.cidx` index format (backward compatible with `cdbfasta`)
-   - In-memory hash lookup using djb2 algorithm (matches C++ hash)
-   - Single `read` syscall per record (vs byte-by-byte in C++)
-   - Supports: `-a` (fetch by accession), `-l` (list keys), `-n` (count)
-
-2. **`faidx_rust`** — Preferred alternative using samtools `.fai` index
-   - Reads samtools `.fai` plain-text index format
-   - Supports full sequence retrieval and sub-range extraction
-   - `faidx_rust genome.fa chr1` → full sequence
-   - `faidx_rust genome.fa chr1:1000-2000` → sub-range
-
-**Perl Integration** (`PerlLib/CdbTools.pm`):
-- `cdbyank()` auto-detects `cdbyank_rust` in PATH, falls back to C++ `cdbyank`
-- `get_seq()` — new API using `faidx_rust` with samtools `.fai` index
-- `get_seq_range()` — sub-range extraction via `faidx_rust`
-- Auto-creates `.fai` index via `samtools faidx` if missing
-
-**Verified**: Output identical to C++ `cdbyank` for all test cases.
+**Known limitation**: slclust_rust is slower than C++ at all tested scales.
+The HashMap/HashSet overhead outweighs the O(1) dedup benefit for small-to-medium
+degree graphs. Pipeline currently falls back to C++ slclust. The primary benefit
+of slclust_rust is iterative DFS eliminating `ulimit -s unlimited` — a reliability
+improvement, not a speed improvement.
 
 ## Performance Testing
 
@@ -155,7 +161,7 @@ cd pasa_rust && cargo test --release
 
 ## Implemented Optimizations
 
-### 1. Gene_obj Caching (HIGH IMPACT)
+### 1. Gene_obj Caching (HIGH IMPACT) — DONE
 
 **File**: `PerlLib/Gene_obj.pm`
 
@@ -187,7 +193,7 @@ Also fixed redundant sorting in:
 - `create_cDNA_sequence()` 
 - `create_CDS_sequence()`
 
-### 2. Fasta_retriever File Handle Reuse (HIGH IMPACT)
+### 2. Fasta_retriever File Handle Reuse (HIGH IMPACT) — DONE
 
 **File**: `PerlLib/Fasta_retriever.pm`
 
@@ -223,7 +229,7 @@ sub _open_compressed {
 }
 ```
 
-### 3. GFF3_utils Regex Precompilation (MEDIUM IMPACT)
+### 3. GFF3_utils Regex Precompilation (MEDIUM IMPACT) — DONE
 
 **File**: `PerlLib/GFF3_utils.pm`
 
@@ -239,7 +245,7 @@ my $PARENT_RE = qr/Parent="?([^;\s"]+)"?;?/;
 my $FEAT_TYPE_RE = qr/^(gene|mRNA|transcript|CDS|exon)$/;
 ```
 
-### 4. PSL_parser Caching and O(n²) Fix (MEDIUM IMPACT)
+### 4. PSL_parser Caching and O(n²) Fix (MEDIUM IMPACT) — DONE
 
 **File**: `PerlLib/PSL_parser.pm`
 
@@ -268,34 +274,80 @@ for (my $i = 0; $i < @genome_coords; $i++) {
 $ret_text .= "\n" . join("....", @align_parts) . "\n";
 ```
 
+### 5. Database Batch Operations — DONE
+
+**Files**: `PerlLib/DB_connect.pm`, `scripts/populate_alignments_via_btab.dbi`, `scripts/import_spliced_alignments.dbi`
+
+**Issue**: Each accession triggered a separate query in loop (N+1 query pattern).
+
+**Fix**: 
+- `DB_connect.pm` `RunMod`: switched from `do()` to `prepare_cached()` for repeated statement handle reuse
+- `populate_alignments_via_btab.dbi`: added transaction support (`AutoCommit=0`, batch commits every 1000 records), used `prepare_cached` for alignment inserts
+- `import_spliced_alignments.dbi`: used `prepare_cached` for `store_cluster_links` batch operations
+
+### 6. Pipeliner Backtick Removal — DONE
+
+**File**: `PerlLib/Pipeliner.pm`
+
+**Issue**: Using backticks for simple file operations (spawning subprocesses unnecessarily).
+
+**Fix**:
+```perl
+# Replace: my $errmsg = `cat $tmp_stderr`;
+open my $err_fh, '<', $tmp_stderr;
+my $errmsg = do { local $/; <$err_fh> };
+
+# Replace: `touch $checkpoint_file`;
+open my $cp_fh, '>', $checkpoint_file;
+close $cp_fh;
+```
+
+### 7. Database Indexes — DONE
+
+**Files**: `schema/cdna_alignment_mysqlschema`, `schema/cdna_alignment_sqliteschema`
+
+**Issue**: Missing composite indexes for common query patterns.
+
+**Fix**: Added composite indexes to both MySQL and SQLite schemas:
+- `alignment(align_id, lend, rend)` — for range queries joining on align_id
+- `align_link(prog, cluster_id)` — for filtering by both prog and cluster_id
+
+### 8. Compression for Intermediate Files — DONE
+
+**Files**: `PerlLib/CompressUtils.pm` (new), `PerlLib/Pipeliner.pm`, `Launch_PASA_pipeline.pl`
+
+**Issue**: Pipeline creates large uncompressed intermediate files (GFF3, BED, GTF).
+
+**Fix**:
+- New `CompressUtils.pm` module with transparent gzip/bzip2 file compression utilities
+- Pipeliner gains `compress_intermediates` option and per-Command `set_compress_files`/`get_compress_files` methods
+- After a command completes, specified intermediate files are gzipped in-place
+- `Launch_PASA_pipeline.pl` gains `--compress-intermediates` CLI flag
+- `compress_files` metadata added to GFF3/BED/GTF output commands for valid/failed alignments and pasa_assemblies
+
 ## High-Priority Optimizations Remaining
 
 ### C++ Components
 
-#### 1. cdna_alignment_assembler.cpp - O(n²) Compatibility Matrix
+#### 1. cdna_alignment_assembler.cpp - O(n²) Compatibility Matrix — DONE
 
-**Location**: `pasa_cpp/cdna_alignment_assembler.cpp:662-687`
+**Location**: `pasa_cpp/cdna_alignment_assembler.cpp:660-695`
 
 **Issue**: Nested loop for compatibility checking is O(n²)
 
-**Recommendation**: Implement spatial indexing (interval tree/segment tree) to reduce to O(n log n + k)
+**Fix**: Added early termination based on sorted `lend` positions. Since alignments are sorted by `lend`, once `alignments[j].lend > alignments[i].rend`, no further alignments can overlap `i`. This reduces the inner loop from O(n) to O(k) where k is the number of potentially overlapping alignments.
 
-**Rust Implementation Value**: HIGH
-- Graph algorithms benefit greatly from Rust's ownership model
-- Memory safety in complex data structures
-- Zero-cost abstractions for performance
+#### 2. map<int,bool> for accountedFor — DONE
 
-#### 2. map<int,bool> for accountedFor
+**Location**: `pasa_cpp/cdna_alignment_assembler.cpp:122`
 
-**Location**: `pasa_cpp/cdna_alignment_assembler.cpp:122-126`
+**Issue**: Using `map` where vector suffices - O(log n) instead of O(1)
 
-**Issue**: Using `map` where vector/slice suffices - O(log n) instead of O(1)
-
-**Fix**: Replace with `vector<char>` or `std::bitset`
-
-**Rust Implementation Value**: MEDIUM
-- Simple but pervasive issue
-- `Vec<u8>` provides optimal performance
+**Fix**: Replaced `map<int,bool>` with `vector<bool>` in:
+- `accountedFor` in `assembleAlignments()`
+- `tracker` in `forwardTrace()` and `backTrace()`
+- `uniqueMap` in `unique_entries()`
+- `get_max_missing_Lobj()` signature updated to `vector<bool>&`
 
 #### 3. cdbyank Byte-by-Byte I/O
 
@@ -322,46 +374,15 @@ $ret_text .= "\n" . join("....", @align_parts) . "\n";
 
 ### Database Optimizations
 
-#### 1. N+1 Query Problem
+#### 1. Lock Contention in DB_connect — DONE
 
-**Files**: `scripts/populate_alignments_via_btab.dbi`, `scripts/import_spliced_alignments.dbi`
+**File**: `PerlLib/DB_connect.pm`
 
-**Issue**: Each accession triggers a separate query in loop
+**Issue**: Global lock (`$LOCKVAR` via `threads::shared`) serialized all database operations across all threads, even when using independent connections.
 
-**Fix**: Batch insert using `execute_batch()` or multi-value INSERT:
-```perl
-$dbh->do("INSERT INTO table VALUES (?,?)", {}, @values);
-```
+**Fix**: Removed the global lock entirely from `do_sql_2D` and `RunMod`. Each thread creates its own connection via `connect_to_db`, so each has its own `$dbh` and `prepare_cached` cache. No cross-thread sharing occurs, making the lock unnecessary. Also removed the `use threads; use threads::shared;` imports that were only needed for the lock.
 
-#### 2. Lock Contention in DB_connect
-
-**File**: `PerlLib/DB_connect.pm:176, 220`
-
-**Issue**: Global lock serializes all threads
-
-**Fix**: Per-thread connections already exist; remove unnecessary global lock
-
-#### 3. Missing Database Indexes
-
-**Recommendation**: Add composite indexes:
-```sql
-CREATE INDEX idx_cluster_link_cdna ON cluster_link(cdna_acc);
-CREATE INDEX idx_align_link_cluster ON align_link(cluster_id);
-CREATE INDEX idx_align_link_prog ON align_link(prog);
-```
-
-## Compression Opportunities
-
-### 1. Intermediate Files
-
-Current pipeline creates uncompressed intermediate files:
-- Alignment files (PSL, SAM)
-- GFF3 outputs
-- Cluster links
-
-**Recommendation**: Add gzip compression support with `.gz` extension
-
-### 2. Database Schema
+#### 2. Database Schema Compression
 
 **Issue**: SQLite/MySQL databases can grow large without compression
 
@@ -370,82 +391,13 @@ Current pipeline creates uncompressed intermediate files:
 - Use SQLite with compression extension
 - Implement streaming compression for exports
 
-### 3. FASTA Index Files
+### Memory Optimization
 
-**File**: `PerlLib/Fasta_retriever.pm`
-
-**Current**: Only supports samtools faidx format
-
-**Recommendation**: Add support for:
-- compressed FASTA with bgzip
-- custom compressed index format
-
-## Rust Migration Priority
-
-### Tier 1 - Critical (Significant Safety + Performance Gains)
-
-1. **cdna_alignment_assembler.cpp**
-   - Complex ownership semantics with alignment objects
-   - DAG-based assembly algorithm benefits from Rust's borrow checker
-   - Estimated 20-40% speedup with parallel processing
-
-2. **Lobject containment tracking**
-   - Bit manipulation and cache-friendly data structures
-   - SIMD-friendly algorithm
-   - Estimated 10-20% speedup
-
-### Tier 2 - Important (Moderate Gains)
-
-3. **cdbyank I/O operations**
-   - Buffer management, range extraction
-   - Async I/O potential
-   - Estimated 2-5x faster for range queries
-
-4. **slclust graph operations**
-   - Clustering algorithm
-   - Set operations on node links
-   - Estimated 15-30% speedup
-
-### Tier 3 - Nice to Have
-
-5. **PSL/SAM parsing (Perl replacement)**
-   - Regex-heavy, but well-isolated
-   - Rust regex is faster but marginal gains
-   - Better suited for FFI from Perl
-
-6. **Fasta_retriever**
-   - Already has C implementation in cdbfasta
-   - Consider exposing Rust implementation
-
-## Memory Optimization
-
-### 1. Gene_obj Memory Leaks
+#### 1. Gene_obj Memory Leaks
 
 **Issue**: Large sequence strings stored in gene objects
 
 **Fix**: Clear sequences after use or use lazy loading
-
-### 2. Pipeliner Backticks
-
-**File**: `PerlLib/Pipeliner.pm:178-190`
-
-**Issue**: Using backticks for simple operations
-
-**Fix**:
-```perl
-# Replace:
-my $errmsg = `cat $tmp_stderr`;
-
-# With:
-open my $err_fh, '<', $tmp_stderr;
-my $errmsg = do { local $/; <$err_fh> };
-
-# Replace:
-`touch $checkpoint_file`;
-
-# With:
-utime undef, undef, $checkpoint_file;
-```
 
 ## Parallelization Opportunities
 
@@ -472,28 +424,6 @@ Created `PerlLib/perf_tests.pl` with tests for:
 - String operations
 
 Run with: `perl PerlLib/perf_tests.pl [ITERATIONS]`
-
-## Recommendations Summary
-
-### Immediate (Apply Now)
-1. ~~Gene_obj caching~~ - DONE
-2. ~~Fasta_retriever file handle reuse + compression~~ - DONE
-3. ~~PSL_parser caching and O(n²) fix~~ - DONE
-4. ~~GFF3_utils regex precompile~~ - DONE
-5. Database batch operations
-6. Pipeliner backtick removal
-
-### Short-term (1-3 months)
-1. C++ `map` to `vector` optimization
-2. cdbyank buffered I/O
-3. Database indexes
-4. Thread pool for alignment processing
-
-### Long-term (3-6 months)
-1. Rust implementation of cdna_alignment_assembler
-2. Rust cdbyank with async I/O
-3. Compression for all intermediate files
-4. Memory profiling and leak fixes
 
 ## Benchmark Results
 
@@ -530,14 +460,18 @@ complexity becomes more beneficial as n grows. At n=2000, Rust is ~2x faster.
 | 9997 | 5.34ms | 31.20ms | 0.17x |
 | 19999 | 5.58ms | 64.55ms | 0.09x |
 
-**Known limitation**: slclust_rust is slower than C++ slclust at all tested
-scales. The HashMap/HashSet overhead (hashing, bucket lookup, potential
-resizing) outweighs the O(1) dedup benefit for small-to-medium degree graphs.
-The C++ version's `vector` with linear dedup has better cache locality.
+**Known limitation**: slclust_rust is slower than C++ at all tested scales.
+The HashMap/HashSet overhead outweighs the O(1) dedup benefit for small-to-medium
+degree graphs. The C++ version's `vector` with linear dedup has better cache locality.
+
+**Pipeline fallback**: `SingleLinkageClusterer.pm` now prefers C++ `slclust` (with
+`ulimit -s unlimited`) over `slclust_rust`, since the C++ version is faster at all
+tested scales. The Rust version is retained as a fallback for environments where
+`ulimit` is unavailable or restricted.
 
 **Primary benefit of slclust_rust**: Iterative DFS eliminates the need for
-`ulimit -s unlimited` and prevents stack overflow on large clusters — a
-reliability improvement, not a speed improvement.
+`ulimit -s unlimited` and prevents stack overflow on large clusters — a reliability
+improvement, not a speed improvement.
 
 ### Perl-Level Benchmarks
 

@@ -119,11 +119,7 @@ void CDNA_alignment_assembler::assembleAlignments() {
   do_full_Rscan();
   
   // get list of missing alignments:
-  map<int,bool> accountedFor;
-  // initialize
-  for (int i=0; i < num_alignments; i++) {
-    accountedFor[i] =false;
-  }
+  vector<bool> accountedFor(num_alignments, false);
   
   /* pasa2 don't do it
   // track already accounted for alignments.
@@ -659,11 +655,24 @@ bool CDNA_alignment_assembler::encapsulates (CDNA_alignment& A, CDNA_alignment& 
 
 void CDNA_alignment_assembler::determine_compatibilities_and_encapsulations() {
   
-  // All vs. All comparison of alignments
+  // Alignments are sorted by lend position.
+  // For alignment i with span [lend_i, rend_i], only alignments j
+  // where lend_j <= rend_i can potentially overlap.
+  // Once alignments[j].lend > alignments[i].rend, break the inner loop.
   for (int i=0; i < num_alignments; i++) {
-        
+    
+    struct coordset& icoords = alignments[i].get_coords();
+    int i_rend = icoords.rend;
+    
     for (int j=i+1; j < num_alignments; j++) {
     
+      struct coordset& jcoords = alignments[j].get_coords();
+      
+      // Early termination: sorted by lend, so no further overlaps with i
+      if (jcoords.lend > i_rend) {
+        break;
+      }
+      
       if (DEBUG) { cout << "can merge " << i << " to " << j << " ?" << endl; }
       bool mergeable = false;
       if (canMerge(alignments[i], alignments[j])) {
@@ -709,7 +718,7 @@ void CDNA_alignment_assembler::populateLobjects () {
 
 vector<int> CDNA_alignment_assembler::forwardTrace (int startIndex) {
   if (DEBUG) { cout << "Beginning forwardTrace, starting at index: " << startIndex << endl; }
-  map<int,bool> tracker;
+  vector<bool> tracker(num_alignments, false);
   Lobject* Lobj = & Lobjects[startIndex];
   while (Lobj != 0) {
     if (DEBUG) { cout << "trace index: " << Lobj->index << endl; }
@@ -724,12 +733,9 @@ vector<int> CDNA_alignment_assembler::forwardTrace (int startIndex) {
   }
   
   vector<int> unique;
-  map<int,bool>::iterator pos;
-  for (pos = tracker.begin(); pos != tracker.end(); pos++) {
-    int index = pos->first;
-    bool is_contained = pos->second;
-    if (is_contained) {
-      unique.push_back(index);
+  for (int i = 0; i < num_alignments; i++) {
+    if (tracker[i]) {
+      unique.push_back(i);
     }
   }
   return (unique);
@@ -737,7 +743,7 @@ vector<int> CDNA_alignment_assembler::forwardTrace (int startIndex) {
 
 vector<int> CDNA_alignment_assembler::backTrace(int startIndex) {
   if (DEBUG) { cout << "Beginning backTrace, starting at index: " << startIndex << endl; }
-  map<int,bool> tracker;
+  vector<bool> tracker(num_alignments, false);
   Lobject* Lobj = & Lobjects[startIndex];
   while (Lobj != 0) {
     if (DEBUG) { cout << "trace index: " << Lobj->index << endl;
@@ -752,12 +758,9 @@ vector<int> CDNA_alignment_assembler::backTrace(int startIndex) {
   }
   
   vector<int> unique;
-  map<int,bool>::iterator pos;
-  for (pos = tracker.begin(); pos != tracker.end(); pos++) {
-    int index = pos->first;
-    bool is_contained = pos->second;
-    if (is_contained) {
-      unique.push_back(index);
+  for (int i = 0; i < num_alignments; i++) {
+    if (tracker[i]) {
+      unique.push_back(i);
     }
   }
   return (unique);
@@ -812,8 +815,7 @@ vector<int> CDNA_alignment_assembler::get_alignment_assembly_nucleating_at_align
 }
 
 vector<int> CDNA_alignment_assembler::unique_entries(vector<vector<int> > vecvec) {
-  // requires implementation
-  map<int,bool> uniqueMap;
+  vector<bool> uniqueMap(num_alignments, false);
   for (int j=0; j < vecvec.size(); j++) {
     vector<int> myvec = vecvec[j];
     for (int i=0; i <myvec.size(); i++) {
@@ -823,10 +825,10 @@ vector<int> CDNA_alignment_assembler::unique_entries(vector<vector<int> > vecvec
   }
   
   vector<int> uniqueEntries;
-  map<int,bool>::iterator pos;
-  for (pos = uniqueMap.begin(); pos != uniqueMap.end(); pos++) {
-    int entry = pos->first;
-    uniqueEntries.push_back(entry);
+  for (int i = 0; i < num_alignments; i++) {
+    if (uniqueMap[i]) {
+      uniqueEntries.push_back(i);
+    }
   }
   
   return(uniqueEntries);
@@ -881,7 +883,7 @@ string CDNA_alignment_assembler::toAlignIllustration (int lineLength) {
 }
 
 
-Lobject* CDNA_alignment_assembler::get_max_missing_Lobj (vector<Lobject*>& lobj_bin, map<int,bool>& accountedFor) {
+Lobject* CDNA_alignment_assembler::get_max_missing_Lobj (vector<Lobject*>& lobj_bin, vector<bool>& accountedFor) {
   
   int max_missing = 0;
   Lobject* lobj = NULL;
