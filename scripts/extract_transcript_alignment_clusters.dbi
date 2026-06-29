@@ -12,8 +12,11 @@ use Ath1_cdnas;
 use Storable;
 use File::Basename;
 use Getopt::Long qw(:config no_ignore_case bundling);
+use threads;
+use threads::shared;
+use Thread_helper;
 
-use vars qw ($opt_h $opt_D $opt_p $opt_d $DEBUG $opt_S $opt_M $opt_G $opt_v $GFF3 $include_PASA);
+use vars qw ($opt_h $opt_D $opt_p $opt_d $DEBUG $opt_S $opt_M $opt_G $opt_v $GFF3 $include_PASA $opt_T);
 
 &GetOptions ('M=s' => \$opt_M,
              'p=s' => \$opt_p,
@@ -22,6 +25,7 @@ use vars qw ($opt_h $opt_D $opt_p $opt_d $DEBUG $opt_S $opt_M $opt_G $opt_v $GFF
              'GFF3' => \$GFF3,
              'v' => \$opt_v,
              'include_PASA' => \$include_PASA,
+             'T=i' => \$opt_T,
             );
 
 $|=1;
@@ -46,7 +50,9 @@ The output can be fed into the stand-alone PASA assembler scripts.
 # --GFF3  (use GFF3 format)
 #
 # --include_PASA  (includes the PASA alignment assemblies too; default are just the input clusters.)
-# 
+#
+# -T <int>   number of threads (default: 2)
+#
 ###################### Process Args and Options #####################
 
 _EOH_
@@ -56,7 +62,7 @@ _EOH_
 
 if ($opt_h) {die $usage;}
 my $MYSQLstring = $opt_M or die $usage;
-my ($MYSQLdb, $MYSQLserver) = split (/:/, $MYSQLstring); 
+my ($MYSQLdb, $MYSQLserver) = split (/:/, $MYSQLstring);
 my $passwordinfo = $opt_p or die $usage;
 
 my ($user, $password) = split (/:/, $passwordinfo);
@@ -64,7 +70,7 @@ my ($user, $password) = split (/:/, $passwordinfo);
 my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password);
 $dbproc = &DB_connect::reconnect_to_server($dbproc); #just for the fun of it
 
-my $match_id = 0;
+my $match_id :shared = 0;
 
 
 my $query = "select distinct annotdb_asmbl_id from clusters";
@@ -74,26 +80,65 @@ foreach my $result_aref (@results) {
     push (@asmbl_ids, $result_aref->[0]);
 }
 
+$dbproc->disconnect;
+
+my $NUM_THREADS = $opt_T || 2;
+my $thread_helper = new Thread_helper($NUM_THREADS);
+
+# Map asmbl_id to temp output file for ordered concatenation
+my %asmbl_id_to_outfile;
+
 foreach my $asmbl_id (@asmbl_ids) {
-        
+    $thread_helper->wait_for_open_thread();
+    my $outfile = "/tmp/extract_clusters.$$.$asmbl_id.out";
+    $asmbl_id_to_outfile{$asmbl_id} = $outfile;
+    my $thread = threads->create('process_asmbl_id', $asmbl_id, $outfile);
+    $thread_helper->add_thread($thread);
+}
+
+$thread_helper->wait_for_all_threads_to_complete();
+
+my @failed_threads = $thread_helper->get_failed_threads();
+if (@failed_threads) {
+    die "Error, " . scalar(@failed_threads) . " threads failed.\n";
+}
+
+# Concatenate temp files in asmbl_id order
+foreach my $asmbl_id (@asmbl_ids) {
+    my $outfile = $asmbl_id_to_outfile{$asmbl_id};
+    if (-s $outfile) {
+        open my $fh, '<', $outfile or die "Cannot open $outfile: $!";
+        print while <$fh>;
+        close $fh;
+    }
+    unlink $outfile;
+}
+
+
+####
+sub process_asmbl_id {
+    my ($asmbl_id, $outfile) = @_;
+
+    my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password);
+
+    open (my $ofh, ">$outfile") or die "Cannot write to $outfile: $!";
+
     ## Get clusters based on that chromo
     my @cluster_ids = Ath1_cdnas::get_cluster_ids_via_annotdb_asmbl_id($dbproc, $asmbl_id);
-    
+
     foreach my $cluster_id (@cluster_ids) {
-        
-        
-                
+
         my $query = "select cdl.cdna_acc, cdl.align_id, cdl.prog from cluster_link cl, cdna_link cdl where cl.cluster_id = $cluster_id and cl.cdna_acc = cdl.cdna_acc and cdl.validate = 1 ";
         unless ($include_PASA) {
             $query .= " and cl.is_assembly = 0 ";
         }
-        
-        $query .= " order by cdl.cdna_acc"; 
-        
+
+        $query .= " order by cdl.cdna_acc";
+
         my @results = &DB_connect::do_sql_2D ($dbproc, $query);
         if (@results) {
-            print "\n\n// cluster: $cluster_id\n";
-            
+            print $ofh "\n\n// cluster: $cluster_id\n";
+
             foreach my $result (@results) {
                 my ($cdna_acc, $align_id, $prog) = @$result;
                 my $alignment_obj = &Ath1_cdnas::create_alignment_obj($dbproc, $align_id);
@@ -101,30 +146,31 @@ foreach my $asmbl_id (@asmbl_ids) {
 
                 if ($GFF3) {
                     $match_id++;
-                    print $alignment_obj->to_GFF3_format( match_id => $match_id,
+                    print $ofh $alignment_obj->to_GFF3_format( match_id => $match_id,
                                                           source => $prog,
                                                           );
                 }
-                
+
 
                 else {
 
 
                     my $spliced_orient = $alignment_obj->get_spliced_orientation();
-                    
+
                     my @segments = $alignment_obj->get_alignment_segments();
                     my $alignment_text = "$cdna_acc,$spliced_orient";
                     foreach my $segment (@segments) {
                         my ($lend, $rend) = $segment->get_coords();
                         $alignment_text .= ",$lend-$rend";
                     }
-                    print "$alignment_text\n";
+                    print $ofh "$alignment_text\n";
                 }
             }
         }
     }
-}
 
-$dbproc->disconnect;
+    close $ofh;
+    $dbproc->disconnect;
+}
 
 

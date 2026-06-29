@@ -411,20 +411,25 @@ close $cp_fh;
 
 6. **`fix_intron_retention.pl:65`** — added `$old_gene_obj->clear_sequence_info()` and `$new_gene_obj->clear_sequence_info()` after protein comparison.
 
-## Parallelization Opportunities
+## Parallelization — DONE
 
 ### 1. Alignment Processing
-- Batch alignments across multiple cores
-- Use Rust's `rayon` for data parallelism
-- Perl: Thread::Semaphore for controlled parallelism
 
-### 2. GFF3 Parsing
-- Process chromosomes in parallel
-- Merge results at the end
+Three scripts that iterate per-`asmbl_id` (genomic scaffold) have been parallelized using the existing `Thread_helper` pattern:
 
-### 3. Database Bulk Operations
-- Batch inserts with prepared statements
-- Parallel writer threads
+- **`alignment_assembly_to_gene_models.dbi`** — parallelized per `asmbl_id` with `-T` thread count option. Each thread creates its own DB connection and processes all gene models on that scaffold.
+- **`extract_transcript_alignment_clusters.dbi`** — parallelized per `asmbl_id`. Each thread writes to its own temp file; results are concatenated in order after all threads complete. Uses `threads::shared` for the GFF3 `match_id` counter.
+- **`find_alternate_internal_exons.dbi`** — parallelized per `asmbl_id` with `-T` option. Each thread has its own DB connection and transaction.
+
+`Launch_PASA_pipeline.pl` passes `-T $CPU` to the parallelized scripts.
+
+### 2. N+1 Query Fix in GFF3 Output
+
+**File**: `scripts/PASA_transcripts_and_assemblies_to_GFF3.dbi`
+
+**Issue**: The script had an N+1 query pattern — one query to get all `align_id` values, then a separate DB query per `align_id` to get alignment segments.
+
+**Fix**: For GFF3/BED output, replaced the two-step (N+1) query with a single batch query that joins `clusters`, `align_link`, `alignment`, and `cdna_info` in one pass. This reduces the number of DB queries from N+1 to 1.
 
 ## Benchmarking Infrastructure
 

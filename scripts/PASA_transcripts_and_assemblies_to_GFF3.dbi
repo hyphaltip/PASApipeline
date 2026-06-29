@@ -92,6 +92,105 @@ if ($BY_FASTA) {
 }
    
 
+## Build base query and filter conditions
+my $base_where = " c.cluster_id = al.cluster_id"
+    . " and al.align_id = a.align_id"
+    . " and al.cdna_info_id = ci.id";
+my $filter = "";
+if ($prog_name) {
+    unless ($prog_name eq "ALL") {
+        $filter .= " and al.prog = '$prog_name' " ;
+    }
+}	
+
+if ($VALID_ONLY) {
+    $filter .= " and al.validate = 1 ";
+}
+elsif ($FAILED_ONLY) {
+    $filter .= " and al.validate = 0 ";
+}
+
+
+my %asmbl_to_cluster_id;
+if ($ASSEMBLIES_ONLY) {
+    $filter .= " and ci.is_assembly = 1 ";
+
+    {
+        ## get the gene-to-trans relationship
+        my $q = "select subcluster_id, cdna_acc from subcluster_link";
+        my @results = &DB_connect::do_sql_2D($dbproc, $q);
+        foreach my $result (@results) {
+            my ($subcluster_id, $cdna_acc) = @$result;
+            $asmbl_to_cluster_id{$cdna_acc} = $subcluster_id;
+        }
+    }
+}
+elsif ($ALIGNMENTS_ONLY) {
+    $filter .= " and ci.is_assembly = 0 ";
+}
+
+## GTF format: keep per-alignment create_alignment_obj (N+1 inherent to CDNA_alignment)
+if ($GTF_FORMAT) {
+    my $id_query = "select al.align_id from align_link al, cdna_info ci"
+        . " where al.cdna_info_id = ci.id"
+        . $filter;
+    my @id_results = &DB_connect::do_sql_2D($dbproc, $id_query);
+
+    foreach my $result (@id_results) {
+        my ($align_id) = @$result;
+        
+        my $cdna_alignment_obj = &Ath1_cdnas::create_alignment_obj($dbproc, $align_id);
+        
+        my $acc = $cdna_alignment_obj->get_acc();
+        if (%ACCS_WANT && ! $ACCS_WANT{$acc}) { 
+            next;
+        }
+        
+        my $align_acc = $cdna_alignment_obj->{align_acc};
+
+        my $trans_id = "align_id:$align_id|$acc";
+        if ($acc ne $align_acc) {
+            $trans_id .= "|$align_acc";
+        }
+
+        my $subcluster_id = $asmbl_to_cluster_id{$acc};
+        
+        print $cdna_alignment_obj->to_GTF_format( seq_id => $cdna_alignment_obj->{genome_acc},
+                                                  gene_id => ($subcluster_id) ? "PASA_cluster_$subcluster_id" : "align_id:$align_id|$acc",
+                                                  transcript_id => $trans_id,
+                                                  source => $cdna_alignment_obj->{prog},
+                                                  ) . "\n";
+    }
+}
+else {
+    ## GFF/BED format: single batch query replaces N+1 per-alignment queries
+    my $batch_query = "select c.annotdb_asmbl_id, ci.cdna_acc, al.align_acc, al.align_id, al.spliced_orient,"
+        . " a.lend, a.rend, a.mlend, a.mrend, a.orient, a.per_id, al.prog"
+        . " from clusters c, align_link al, alignment a, cdna_info ci"
+        . " where" . $base_where . $filter
+        . " order by al.align_id, a.lend";
+
+    my @batch_results = &DB_connect::do_sql_2D($dbproc, $batch_query);
+
+    foreach my $Lresult (@batch_results) {
+        my ($asmbl_id, $acc, $align_acc, $align_id, $spliced_orient, $lend, $rend, $mlend, $mrend, $orient, $per_id, $prog)= @$Lresult;
+        if (%ACCS_WANT && ! $ACCS_WANT{$acc}) { 
+            next;
+        }
+        
+
+        if ($BED_FORMAT) {
+            my ($end5, $end3) = ($orient eq '+') ? ($lend, $rend) : ($rend, $lend);
+            $ALIGNMENTS{"$asmbl_id$;$acc$;$align_acc"}->{$end5} = $end3;
+        }
+        else {
+            &print_GFF_row($asmbl_id, $acc, $align_id, $spliced_orient, $lend, $rend, $mlend, $mrend, $orient, $per_id, $prog);
+        }
+    }
+}
+}
+   
+
 
 my $query = "select al.align_id from align_link al, cdna_info ci "
     . " where al.cdna_info_id = ci.id";

@@ -910,7 +910,7 @@ if ($RUN_PIPELINE) {
 		  
 		  { 
 			  prog => "$UTILDIR/alignment_assembly_to_gene_models.dbi",
-			  params => "-M '$database' -G $genome_db",
+			  params => "-M '$database' -G $genome_db -T $CPU",
 			  input => undef,
 			  output => undef,
               chkpt => "alignment_assembly_to_gene_models.ok",
@@ -1050,7 +1050,7 @@ if ($ALT_SPLICE && !$COMPARE_TO_ANNOT) { #this has bitten me before. do alt-spli
     
     $cmd = {
         prog => "$UTILDIR/find_alternate_internal_exons.dbi",
-        params => "-M '$database' -G $genome_db",
+        params => "-M '$database' -G $genome_db -T $CPU",
         input => undef,
         output => "$PASA_LOG_DIR/alt_internal_exon_finding.out",
         chkpt => "find_alternate_internal_exons.ok",
