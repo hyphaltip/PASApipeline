@@ -61,6 +61,8 @@ main: {
                 &examine_for_retained_intron($old_gene_obj, $new_gene_obj, \$genome_seq);
                 
             }
+            $old_gene_obj->clear_sequence_info();
+            $new_gene_obj->clear_sequence_info();
             
             
             

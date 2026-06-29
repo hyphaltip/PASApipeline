@@ -349,6 +349,7 @@ foreach my $asmbl_id (keys %contig_id_to_gene_IDs) {
 	  my $gene_id = $isoform->{TU_feat_name};
 	  print "#PROT $model_id $gene_id\t$protein\n\n";
 	}
+	$gene_obj->clear_sequence_info();
   }
 }
 

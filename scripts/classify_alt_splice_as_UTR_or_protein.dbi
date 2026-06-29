@@ -419,7 +419,7 @@ sub examine_alt_splice_diffs {
             my $gene_obj = $acc_to_gene_obj{$acc};
             $gene_obj->create_all_sequence_types($genome_seq_ref);
             my $protein = $gene_obj->get_protein_sequence();
-            # $gene_obj->clear_sequence_info();
+            $gene_obj->clear_sequence_info();
             
             if ($protein =~ /^M/ && $protein =~ /\*$/ && length($protein) > $MIN_FL_PROT_LENGTH) {
                 ## got complete entry

@@ -240,6 +240,8 @@ sub erase_gene_structure {
     $self->{CDS_seq_length} = 0;
     $self->{cDNA_sequence} = 0;
     $self->{cDNA_seq_length} = 0;
+    $self->{gene_sequence} = 0;
+    $self->{gene_sequence_length} = 0;
 }
 
 
@@ -4703,6 +4705,9 @@ sub DESTROY {
 
     warn "DESTROYING gene_obj: " . $self->{TU_feat_name} . "," . $self->{Model_feat_name} . "\n" if $main::DEBUG;
 
+    # Break isoform reference cycles to allow garbage collection
+    $self->{additional_isoforms} = [];
+    $self->{num_additional_isoforms} = 0;
 }
 
 

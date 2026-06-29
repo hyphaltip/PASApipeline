@@ -393,11 +393,23 @@ close $cp_fh;
 
 ### Memory Optimization
 
-#### 1. Gene_obj Memory Leaks
+#### 1. Gene_obj Memory Leaks — DONE
 
-**Issue**: Large sequence strings stored in gene objects
+**Issue**: `create_all_sequence_types()` populates `protein_seq`, `CDS_sequence`, `cDNA_sequence`, `gene_sequence` on every Gene_obj and recursively on all isoforms. `clear_sequence_info()` exists to free these, but was rarely called — and in one location, commented out.
 
-**Fix**: Clear sequences after use or use lazy loading
+**Fixes applied**:
+
+1. **`Gene_obj::erase_gene_structure()`** — added clearing of `gene_sequence` and `gene_sequence_length` (previously missed — `gene_sequence` can be the largest field).
+
+2. **`Gene_obj::DESTROY`** — now breaks isoform reference cycles by clearing `additional_isoforms` array and `num_additional_isoforms`. Previously a no-op, leaving parent→isoform references that prevent garbage collection.
+
+3. **`classify_alt_splice_as_UTR_or_protein.dbi:422`** — uncommented `$gene_obj->clear_sequence_info()` after protein extraction.
+
+4. **`dump_valid_annot_updates.dbi:353`** — added `$gene_obj->clear_sequence_info()` after printing proteins for all isoforms.
+
+5. **`nr_long_orf_extractor.pl:105`** — added `$isoform->clear_sequence_info()` after printing protein and CDS.
+
+6. **`fix_intron_retention.pl:65`** — added `$old_gene_obj->clear_sequence_info()` and `$new_gene_obj->clear_sequence_info()` after protein comparison.
 
 ## Parallelization Opportunities
 
