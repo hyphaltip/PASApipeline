@@ -209,29 +209,26 @@ sub do_sql_2D {
 
 sub RunMod {
     my ($dbproc,$query, @values) = @_;
-    my ($result);
 
     if($::DEBUG||$::DB_SEE) {print "QUERY: $query\tVALUES: @values\n";}
     if($::DEBUG) {
-        $result = "NOT READY";
-    } else {
-        eval {
-            {
-                lock $LOCKVAR;
-                $dbproc->{dbh}->do($query, undef, @values);
-            }
-        };
-        if ($@) { #error occurred
-            
-            ## check for mysql gone away:
-            if ($DBI::errstr =~ /server has gone away|Lost connection/) {
-                ## reestablish connection and try again:
-                &reconnect_to_server($dbproc);
-                return (&RunMod($dbproc, $query, @values));
-            }
-            else {
-                confess "failed query: <$query>\tvalues: @values\nErrors: $DBI::errstr\n";
-            }
+        return;
+    }
+    eval {
+        {
+            lock $LOCKVAR;
+            my $sth = $dbproc->{dbh}->prepare_cached($query);
+            $sth->execute(@values);
+            $sth->finish;
+        }
+    };
+    if ($@) {
+        if ($DBI::errstr =~ /server has gone away|Lost connection/) {
+            &reconnect_to_server($dbproc);
+            return (&RunMod($dbproc, $query, @values));
+        }
+        else {
+            confess "failed query: <$query>\tvalues: @values\nErrors: $DBI::errstr\n";
         }
     }
 

@@ -39,7 +39,8 @@ CREATE TABLE alignment (
   per_id float default NULL,
   PRIMARY KEY  (feat_id),
   KEY align_idx (align_id),
-  KEY feat_id_idx (feat_id)
+  KEY feat_id_idx (feat_id),
+  KEY alignment_coords_idx (align_id, lend, rend)
 ) ;
 
 --
@@ -253,7 +254,8 @@ CREATE TABLE align_link (
   KEY cdna_info_id_idx (cdna_info_id),
   KEY cluster_id_idx (cluster_id),
   KEY progvalididx (prog,validate),
-  KEY al_clid_lend_rend_idx (cluster_id, lend, rend)
+  KEY al_clid_lend_rend_idx (cluster_id, lend, rend),
+  KEY align_link_prog_cluster_idx (prog, cluster_id)
 ) ;
 
 --

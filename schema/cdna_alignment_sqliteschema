@@ -19,6 +19,7 @@ CREATE TABLE alignment (
   per_id NUMERIC DEFAULT NULL
 ) ;
 CREATE INDEX align_idx ON alignment(align_id);
+CREATE INDEX alignment_coords_idx ON alignment(align_id, lend, rend);
 
 CREATE TABLE alt_splice_FL_compare (
   row_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,6 +166,7 @@ CREATE INDEX cdna_info_id_idx ON align_link(cdna_info_id);
 CREATE INDEX cluster_id_idx ON align_link(cluster_id);
 CREATE INDEX progvalididx ON align_link(prog,validate);
 CREATE INDEX al_clid_lend_rend_idx on align_link(cluster_id, lend, rend);
+CREATE INDEX align_link_prog_cluster_idx ON align_link(prog, cluster_id);
 
 CREATE TABLE cdna_sequence (
   accession TEXT PRIMARY KEY,

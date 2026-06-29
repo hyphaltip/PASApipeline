@@ -28,7 +28,8 @@ my ($opt_c, $opt_C, $opt_r, $opt_R, $opt_A, $opt_g, $opt_t, $opt_f, $opt_T, $opt
 	$ANNOTS_FILE, $opt_L, $STRINGENT_ALIGNMENT_OVERLAP, $GENE_OVERLAP,
     $SIM4_CHASER, $genetic_code, $TRANSDECODER, @PRIMARY_ALIGNERS,
     $PASACONF, 
-    $SHOW_VERSION_INFO
+    $SHOW_VERSION_INFO,
+    $COMPRESS_INTERMEDIATES
     );
 
 
@@ -94,6 +95,8 @@ my $CUFFLINKS_GTF;
 			  
               'version' => \$SHOW_VERSION_INFO,
               
+              'compress-intermediates' => \$COMPRESS_INTERMEDIATES,
+
 			  );
 
 if (@ARGV) {
@@ -270,6 +273,7 @@ unless (-d $checkpts_dir) {
 my $pipeliner = new Pipeliner(-verbose=>2,
                               -checkpoint_dir=>$checkpts_dir,
                               -cmds_log=> "$checkpts_dir.cmds_log",
+                              -compress_intermediates => $COMPRESS_INTERMEDIATES,
     );
 
 
@@ -598,7 +602,57 @@ if ($RUN_PIPELINE) {
                   input => undef,
                   output => "$DBname.valid_${map_program}_alignments.gff3",
                   chkpt => "$DBname.valid_${map_program}_alignments.gff3.ok",
-                      
+                  compress_files => ["$DBname.valid_${map_program}_alignments.gff3"],
+              },
+              
+              # do again, but write in BED format
+              { 
+                  prog => "$UTILDIR/PASA_transcripts_and_assemblies_to_GFF3.dbi",
+                  params => "-M '$database' -v -A -P ${map_program} -B ",
+                  input => undef,
+                  output => "$DBname.valid_${map_program}_alignments.bed",
+                  chkpt => "$DBname.valid_${map_program}_alignments.bed.ok",
+                  compress_files => ["$DBname.valid_${map_program}_alignments.bed"],
+              },
+
+              # do again, but write in GTF format
+              { 
+                  prog => "$UTILDIR/PASA_transcripts_and_assemblies_to_GFF3.dbi",
+                  params => "-M '$database' -v -A -P ${map_program} -T ",
+                  input => undef,
+                  output => "$DBname.valid_${map_program}_alignments.gtf",
+                  chkpt => "$DBname.valid_${map_program}_alignments.gtf.ok",
+                  compress_files => ["$DBname.valid_${map_program}_alignments.gtf"],
+              },
+              
+              # write the gff3 file describing the failures:
+              { 
+                  prog => "$UTILDIR/PASA_transcripts_and_assemblies_to_GFF3.dbi",
+                  params => "-M '$database' -f -A -P ${map_program}",
+                  input => undef,
+                  output => "$DBname.failed_${map_program}_alignments.gff3",
+                  chkpt => "$DBname.failed_${map_program}_alignments.gff3.ok",
+                  compress_files => ["$DBname.failed_${map_program}_alignments.gff3"],
+              },
+              
+              # do again, but write in BED format
+              { 
+                  prog => "$UTILDIR/PASA_transcripts_and_assemblies_to_GFF3.dbi",
+                  params => "-M '$database' -f -A -P ${map_program} -B ",
+                  input => undef,
+                  output => "$DBname.failed_${map_program}_alignments.bed",
+                  chkpt => "$DBname.failed_${map_program}_alignments.gff3.ok",
+                  compress_files => ["$DBname.failed_${map_program}_alignments.bed"],
+              },
+              
+              # do again, but write in GTF format
+              { 
+                  prog => "$UTILDIR/PASA_transcripts_and_assemblies_to_GFF3.dbi",
+                  params => "-M '$database' -f -A -P ${map_program} -T ",
+                  input => undef,
+                  output => "$DBname.failed_${map_program}_alignments.gtf",
+                  chkpt => "$DBname.failed_${map_program}_alignments.gtf.ok",
+                  compress_files => ["$DBname.failed_${map_program}_alignments.gtf"],
               },
               
               # do again, but write in BED format
@@ -875,6 +929,7 @@ if ($RUN_PIPELINE) {
 			  input => undef,
 			  output => "$DBname.pasa_assemblies.gff3",
               chkpt => "pasa_assemblies_to_gff3.ok",
+              compress_files => ["$DBname.pasa_assemblies.gff3"],
 			  },
           
           { # bed format
@@ -883,6 +938,7 @@ if ($RUN_PIPELINE) {
 			  input => undef,
 			  output => "$DBname.pasa_assemblies.bed",
               chkpt => "pasa_assemblies_to_bed.ok",
+              compress_files => ["$DBname.pasa_assemblies.bed"],
 			  },
           
           { # gtf format
@@ -891,6 +947,7 @@ if ($RUN_PIPELINE) {
 			  input => undef,
 			  output => "$DBname.pasa_assemblies.gtf",
               chkpt => "pasa_assemblies_to_gtf.ok",
+              compress_files => ["$DBname.pasa_assemblies.gtf"],
 			  },
 		  
           
@@ -954,6 +1011,7 @@ if ($COMPARE_TO_ANNOT) {
         input => undef,
         output => "$DBname.gene_structures_post_PASA_updates.$$.gff3",
         chkpt => "dump_valid_annot_updates." . time(),
+        compress_files => ["$DBname.gene_structures_post_PASA_updates.$$.gff3"],
     };
 
     push (@cmds, $cmd);
@@ -965,6 +1023,7 @@ if ($COMPARE_TO_ANNOT) {
 		input => undef,
 		output => "$DBname.gene_structures_post_PASA_updates.$$.bed",
         chkpt => "gene_structures_post_PASA.bed." . time(),
+        compress_files => ["$DBname.gene_structures_post_PASA_updates.$$.bed"],
 	};
 	
 	push (@cmds, $cmd);
@@ -1052,7 +1111,11 @@ foreach my $cmd (@cmds) {
         print "CMD: $cmdstr\n";
     }
     else {
-        $pipeliner->add_commands(new Command($cmdstr, $cmd->{chkpt}));
+        my $command = new Command($cmdstr, $cmd->{chkpt});
+        if ($COMPRESS_INTERMEDIATES && $cmd->{compress_files}) {
+            $command->set_compress_files(@{$cmd->{compress_files}});
+        }
+        $pipeliner->add_commands($command);
     }
 }
 
