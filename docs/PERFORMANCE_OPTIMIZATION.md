@@ -431,6 +431,43 @@ Three scripts that iterate per-`asmbl_id` (genomic scaffold) have been paralleli
 
 **Fix**: For GFF3/BED output, replaced the two-step (N+1) query with a single batch query that joins `clusters`, `align_link`, `alignment`, and `cdna_info` in one pass. This reduces the number of DB queries from N+1 to 1.
 
+### 3. Batch Alignment Object Fetching
+
+**Files**: `PerlLib/Ath1_cdnas.pm`, `scripts/validate_alignments_in_db.dbi`, `scripts/subcluster_builder.dbi`, `scripts/assemble_clusters.dbi`, `scripts/splicing_variation_to_splicing_event.dbi`, `scripts/cDNA_annotation_comparer.dbi`, `scripts/polyA_site_transcript_mapper.dbi`
+
+**Issue**: Multiple scripts called `create_alignment_obj()` or `get_alignment_obj_via_align_acc()` in a loop, resulting in 3 DB queries per alignment (align_id lookup, genome_acc lookup, alignment segment fetch). For N alignments, this meant 3N queries.
+
+**Fix**: Added two batch functions to `Ath1_cdnas.pm`:
+
+- **`batch_create_alignment_objs()`** — Takes a list of alignment accession names. Single batch query joins `align_link`, `alignment`, `cdna_info`, and `clusters`. Groups alignment segments by accession. Returns a hash mapping accession to `CDNA_alignment` object.
+- **`batch_create_alignment_objs_by_id()`** — Same as above but takes a list of `align_id` values. Also accepts an optional `$seq_ref` for splice junction identification.
+
+Both functions set all fields that `create_alignment_obj()` sets: `align_acc`, `cdna_acc`, `fli_status`, `cdna_id`, `align_id`, `prog`, `genome_acc`, `title`, `spliced_orientation`.
+
+**Applied to scripts**:
+
+| Script | Previous Pattern | Optimization |
+|--------|-----------------|--------------|
+| `validate_alignments_in_db.dbi` | 3N queries per scaffold | 1 batch query per scaffold |
+| `subcluster_builder.dbi` | 3N queries per cluster | 1 batch query per cluster |
+| `assemble_clusters.dbi` | 3N queries per cluster | 1 batch query per cluster |
+| `splicing_variation_to_splicing_event.dbi` | 3N queries per event | 1 batch query for all events |
+| `cDNA_annotation_comparer.dbi` | 5 N+1 loop patterns | 5 batch fetch replacements |
+| `polyA_site_transcript_mapper.dbi` | N queries per align_id | 1 batch query for all align_ids |
+
+### 4. Database Index Additions
+
+**Files**: `schema/cdna_alignment_mysqlschema`, `schema/cdna_alignment_sqliteschema`
+
+**Issue**: Common query patterns in annotation comparison and status linking lacked supporting composite indexes, causing full table scans.
+
+**Indexes added** (both MySQL and SQLite):
+
+| Table | Index | Query Pattern |
+|-------|-------|---------------|
+| `annotation_updates` | `(compare_id)` | `WHERE compare_id = ?` for update lookups |
+| `status_link` | `(compare_id, cdna_acc)` | `WHERE compare_id = ? AND cdna_acc = ?` for status joins |
+
 ## Benchmarking Infrastructure
 
 Created `PerlLib/perf_tests.pl` with tests for:

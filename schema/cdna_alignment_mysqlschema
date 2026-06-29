@@ -185,7 +185,8 @@ CREATE TABLE annotation_updates (
   PRIMARY KEY  (update_id),
   KEY is_valid_idx (is_valid),
   KEY alt_splice_idx (alt_splice_flag),
-  KEY modelidx (model_id)
+  KEY modelidx (model_id),
+  KEY compare_id_idx (compare_id)
 ) ;
 
 --
@@ -364,7 +365,8 @@ CREATE TABLE status_link (
   PRIMARY KEY  (status_link_id),
   KEY status_link_acc_idx (cdna_acc),
   KEY updateididx (annot_update_id),
-  KEY compare_idx (compare_id)
+  KEY compare_idx (compare_id),
+  KEY compare_cdna_idx (compare_id, cdna_acc)
 ) ;
 
 --
