@@ -184,8 +184,8 @@ sub assemble_transcripts_on_scaffold {
         ## refreshen db connection (sometimes assembly takes way tooo long and mysql server goes away)
         $dbproc = &DB_connect::reconnect_to_server($dbproc);
         
-        my $query = "select al.align_acc, al.align_id, al.lend, al.score from align_link al where al.cluster_id = $cluster_id and al.validate = 1";
-        my @results = &DB_connect::do_sql_2D ($dbproc, $query);
+        my $query = "select al.align_acc, al.align_id, al.lend, al.score from align_link al where al.cluster_id = ? and al.validate = 1";
+        my @results = &DB_connect::do_sql_2D ($dbproc, $query, $cluster_id);
 
         if (scalar @results > $max_num_aligns_assemble_per_cluster) {
 

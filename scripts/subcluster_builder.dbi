@@ -91,8 +91,8 @@ foreach my $result (@results) {
     ## Get all cluster info for that chromosome
     my $query = "select distinct c.cluster_id, c.lend, c.rend "
         . " from clusters c, align_link al, cdna_info ci "
-        . " where c.annotdb_asmbl_id = '$asmbl_id' and al.cluster_id = c.cluster_id and al.cdna_info_id = ci.id and ci.is_assembly = 1 ";
-    my @results = &DB_connect::do_sql_2D($dbproc, $query);
+        . " where c.annotdb_asmbl_id = ? and al.cluster_id = c.cluster_id and al.cdna_info_id = ci.id and ci.is_assembly = 1 ";
+    my @results = &DB_connect::do_sql_2D($dbproc, $query, $asmbl_id);
     
     my @clusters; #index to bin of clusters
     my @all_clusters; #simple unindexed list of clusters.
@@ -121,8 +121,8 @@ foreach my $result (@results) {
         print "\n\n\n\n\n*****************************************************************************\n// Processing cluster: $cluster_id\n";
         my @assemblies;
         my $query = "select al.align_id from align_link al, cdna_info ci "
-            . " where al.cluster_id = $cluster_id and al.cdna_info_id = ci.id and ci.is_assembly = 1";
-        my @results = &DB_connect::do_sql_2D($dbproc, $query);
+            . " where al.cluster_id = ? and al.cdna_info_id = ci.id and ci.is_assembly = 1";
+        my @results = &DB_connect::do_sql_2D($dbproc, $query, $cluster_id);
         
         foreach my $result (@results) {
             push (@assemblies, $result->[0]);

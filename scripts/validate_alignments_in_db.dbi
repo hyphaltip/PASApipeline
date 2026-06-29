@@ -282,11 +282,13 @@ sub validate_alignments_on_asmbl_id {
 	  . "where c.annotdb_asmbl_id = ? and c.cluster_id = al.cluster_id and al.cdna_info_id = ci.id "
       . " and al.validate is null";
 	  
+    my @bind_params = ($asmbl_id);
     if ($prog_type) {
-        $query .= " and al.prog = '$prog_type' ";
+        $query .= " and al.prog = ?";
+        push @bind_params, $prog_type;
     }
 	
-    my @results = &DB_connect::do_sql_2D($dbproc, $query, $asmbl_id);
+    my @results = &DB_connect::do_sql_2D($dbproc, $query, @bind_params);
 
 
     my @align_ids = map { $_->[0] } @results;

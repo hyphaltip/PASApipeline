@@ -314,9 +314,9 @@ sub process_match_list {
     
     my $avg_per_id = sprintf ("%.2f", $sum_per_id / $alignment_length * 100);
     
-    my $query = qq { update align_link set avg_per_id = ? where align_id = $align_id };
+    my $query = qq { update align_link set avg_per_id = ? where align_id = ? };
 
-    &RunMod($dbproc, $query, $avg_per_id);
+    &RunMod($dbproc, $query, $avg_per_id, $align_id);
     
 
 

@@ -93,14 +93,14 @@ unless ($compare_id) {
 }
 
 ## get annotation version:
-my $query = "select annotation_version from annotation_compare where compare_id = $compare_id";
-my $annotation_version = &very_first_result_sql($dbproc, $query);
+my $query = "select annotation_version from annotation_compare where compare_id = ?";
+my $annotation_version = &very_first_result_sql($dbproc, $query, $compare_id);
 
 
 ## get list of all previous model identifiers so that we do not reuse them w/ new alt-splice isoforms
-my $query = "select model_id from annotation_store where annotation_version = $annotation_version";
+my $query = "select model_id from annotation_store where annotation_version = ?";
 my %prev_model_ids;
-my @results = &do_sql_2D($dbproc, $query);
+my @results = &do_sql_2D($dbproc, $query, $annotation_version);
 foreach my $result (@results) {
   my ($model_id) = @$result;
   $prev_model_ids{$model_id} = 1;
@@ -123,7 +123,7 @@ my $temp_gene_id = 0;
 # get tentative (or actual) updates
 my $query = "select update_id, gene_id, model_id, alt_splice_flag, is_novel_flag, after_gene_obj, is_valid "
     . " from annotation_updates "
-    . " where compare_id = $compare_id and have_after = 1 and after_gene_obj is not null";
+    . " where compare_id = ? and have_after = 1 and after_gene_obj is not null";
 if ($VALID_ONLY) {
     $query .= " and is_valid = 1";  # not just tentative anymore.
 }
@@ -141,7 +141,7 @@ my %gene_id_to_gene_objs;
 
 
 
-my @results = &do_sql_2D($dbproc, $query);
+my @results = &do_sql_2D($dbproc, $query, $compare_id);
 foreach my $result (@results) {
     my ($update_id, $gene_id, $model_id, $alt_splice_flag, $is_novel_flag, $after_gene_obj, $is_valid) = @$result;
     my $gene_obj = thaw($after_gene_obj);

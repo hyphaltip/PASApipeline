@@ -71,8 +71,8 @@ foreach my $result (@results) {
     my $alignment = $cdna_alignment->toToken();
     print "$cdna_acc\t$alignment\n\n" if $SEE;
 
-    my $query = "update align_link set alignment = '$alignment' where align_id = $align_id ";
-    &DB_connect::RunMod($dbproc, $query);
+    my $query = "update align_link set alignment = ? where align_id = ?";
+    &DB_connect::RunMod($dbproc, $query, $alignment, $align_id);
 
     if ($process % 100 == 0){
         $dbproc->{dbh}->commit;
