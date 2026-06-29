@@ -36,7 +36,7 @@ foreach my $asmbl_id (sort keys %$contig_to_gene_list_href) {
     
 	my $counter = 0;
 
-    my $genome_seq = cdbyank_linear($asmbl_id, $fasta_db);
+    my $genome_seq = get_seq($asmbl_id, $fasta_db);
     
 	unless ($genome_seq) {
 		die "Error, no genome_seq for $asmbl_id";

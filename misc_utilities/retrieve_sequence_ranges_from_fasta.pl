@@ -31,7 +31,7 @@ main: {
 	foreach my $acc (sort keys %genome_acc_to_coord_sets) {
 		my $feature_list_aref = $genome_acc_to_coord_sets{$acc};
 
-		my $genome_seq = &cdbyank_linear($acc, $genome);
+		my $genome_seq = &get_seq($acc, $genome);
 
 		foreach my $coordset (sort {$a->[0]<=>$b->[0]} @$feature_list_aref) {
 			my ($end5, $end3) = @$coordset;

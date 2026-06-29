@@ -41,7 +41,7 @@ foreach my $gene_id (sort @gene_ids) {
     my $model_id = $gene_obj->{Model_feat_name};
 
 	if ($genome_seq_file && $contig_id ne $prev_asmbl_id) {
-		$genome_seq = cdbyank_linear($contig_id, $genome_seq_file);
+		$genome_seq = get_seq($contig_id, $genome_seq_file);
 		$prev_asmbl_id = $contig_id;
 	}
 

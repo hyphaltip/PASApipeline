@@ -23,7 +23,7 @@ my $asmbl_id_to_gene_list_href = &GFF3_utils::index_GFF3_gene_objs($gff3_file, $
 
 foreach my $asmbl_id (keys %$asmbl_id_to_gene_list_href) {
     
-    my $genome_seq = cdbyank_linear($asmbl_id, $fasta_db);
+    my $genome_seq = get_seq($asmbl_id, $fasta_db);
     
     my @gene_ids = @{$asmbl_id_to_gene_list_href->{$asmbl_id}};
     

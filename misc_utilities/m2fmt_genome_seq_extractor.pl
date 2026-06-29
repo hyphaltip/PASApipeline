@@ -52,7 +52,7 @@ my $counter = 0;
 
 foreach my $contig (keys %contig_to_structs) {
 	
-	my $genome_seq = &cdbyank_linear($contig, $genomeDB);
+	my $genome_seq = &get_seq($contig, $genomeDB);
 	
 	foreach my $struct (@{$contig_to_structs{$contig}}) {
 

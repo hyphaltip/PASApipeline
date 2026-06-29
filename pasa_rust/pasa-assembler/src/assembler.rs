@@ -605,6 +605,7 @@ impl CdnaAlignmentAssembler {
 
         if !self.assemblies.is_empty() {
             text.push_str(&format!("\nASSEMBLIES: ({})\n", self.assemblies.len()));
+            let mut assembly_summary = String::new();
             for (i, asm) in self.assemblies.iter().enumerate() {
                 text.push_str(&format!(
                     "{} score: ({}) contains {:?}\n",
@@ -612,7 +613,21 @@ impl CdnaAlignmentAssembler {
                     self.assembly_containment_list[i].len(),
                     self.assembly_containment_list[i]
                 ));
+
+                let acc_list: Vec<&str> = self.assembly_containment_list[i]
+                    .iter()
+                    .map(|&idx| self.alignments[idx].get_title())
+                    .collect();
+
+                assembly_summary.push_str(&format!(
+                    "assembly: ({}) contains alignments: [{}] with structure [{}] score: ({})\n",
+                    i,
+                    acc_list.join(","),
+                    asm.to_string(),
+                    self.assembly_containment_list[i].len()
+                ));
             }
+            text.push_str(&assembly_summary);
         }
 
         text

@@ -90,7 +90,7 @@ foreach my $result (@results) {
 
     if ($current_asmbl_id ne $asmbl_id) {
         $current_asmbl_id = $asmbl_id;
-        $sequence = uc (&cdbyank_linear($asmbl_id, $genomic_seq_db));
+        $sequence = uc (&get_seq($asmbl_id, $genomic_seq_db));
     }
     
     my $tempseq = $acc;
@@ -107,7 +107,7 @@ foreach my $result (@results) {
     print GSEQ ">$asmbl_id\n$subseq\n";
     close GSEQ;
     
-    my $cdna_seq = cdbyank_linear($acc, $seqdb);
+    my $cdna_seq = get_seq($acc, $seqdb);
     $cdna_seq =~ s/(\w{60})/$1\n/g; #convert to fasta format.
     open (CDNA, ">$tempseq") or die $!;
     print CDNA ">$acc\n$cdna_seq\n";

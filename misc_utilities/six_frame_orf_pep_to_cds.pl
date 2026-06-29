@@ -87,7 +87,7 @@ while (my $seq_obj = $fasta_reader->next()) {
 
 foreach my $contig (sort keys %contig_to_gene_lists) {
 
-	my $genome_seq = &cdbyank_linear($contig, $genome_seq_file);
+	my $genome_seq = &get_seq($contig, $genome_seq_file);
 	
 	my @genes = @{$contig_to_gene_lists{$contig}};
 
