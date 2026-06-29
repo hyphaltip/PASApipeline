@@ -1593,8 +1593,9 @@ sub get_alignment_assemblies_via_subcluster_id {
         die "Sorry, no assemblies for subcluster $subcluster_id.\n";
     }
     my @alignment_objs;
+    my %acc_to_obj = &Ath1_cdnas::batch_create_alignment_objs($dbproc, \@assemblies, $seq_ref);
     foreach my $assembly (@assemblies) {
-        my $alignment_obj = &Ath1_cdnas::get_alignment_obj_via_align_acc($dbproc, $assembly, $seq_ref);
+        my $alignment_obj = $acc_to_obj{$assembly};
         push (@alignment_objs, $alignment_obj);
     }
     
@@ -2489,8 +2490,9 @@ sub incorporate_incompatible_nonFL_alignments_via_stitching {
                 if (@ESTasmblAccs) {
                     print "-checking to see if still compatible with other already merged EST assemblies.\n";
                     my @alignments = ($stitched_alignment);
+                    my %est_acc_to_obj = &Ath1_cdnas::batch_create_alignment_objs($dbproc, \@ESTasmblAccs, $seq_ref);
                     foreach my $est_acc (@ESTasmblAccs) {
-                        my $alignment = &Ath1_cdnas::get_alignment_obj_via_align_acc($dbproc, $est_acc, $seq_ref);
+                        my $alignment = $est_acc_to_obj{$est_acc};
                         push (@alignments, $alignment);
                     }
                     my $assembler = new CDNA::PASA_alignment_assembler($seq_ref);
@@ -3142,6 +3144,11 @@ sub analyze_potential_gene_splitting {
                 . " and ci.is_assembly = 1 "
                 . " and ci.is_fli = 1 ";
             my @results = &do_sql_2D($dbproc, $query, $subcluster_id);
+            my @all_cdna_accs = map { $_->[0] } @results;
+            my %cdna_acc_to_obj;
+            if (@all_cdna_accs) {
+                %cdna_acc_to_obj = &Ath1_cdnas::batch_create_alignment_objs($dbproc, \@all_cdna_accs, $seq_ref);
+            }
             my @curr_alignments;
             foreach my $result (@results) {
                 my $cdna_acc = $result->[0];
@@ -3174,7 +3181,7 @@ sub analyze_potential_gene_splitting {
                     next;
                 }
                 
-                my $alignment = &Ath1_cdnas::get_alignment_obj_via_align_acc($dbproc, $cdna_acc, $seq_ref);
+                my $alignment = $cdna_acc_to_obj{$cdna_acc};
                 my $alignment_gene_obj = $alignment->get_gene_obj_via_alignment();
                 my ($orf_lend, $orf_rend) = sort {$a<=>$b} $alignment_gene_obj->get_model_span();
                 unless ($orf_lend < $model_rend && $orf_rend > $model_lend) { #overlap
@@ -3279,12 +3286,14 @@ sub set_status_to_split_gene { ## Should join this function with the status upda
 
 
     my $is_novel_flag = 0;
+
+    my %cdna_acc_to_obj = &Ath1_cdnas::batch_create_alignment_objs($dbproc, $cdna_list_aref, $seq_ref);
     
     foreach my $cdna_acc (@$cdna_list_aref) {
 
         $cdna_counter++;
         
-        my $alignment = &Ath1_cdnas::get_alignment_obj_via_align_acc ($dbproc, $cdna_acc, $seq_ref);
+        my $alignment = $cdna_acc_to_obj{$cdna_acc};
         my $gene_obj = $alignment->get_gene_obj_via_alignment(); ## replace current updated gene version with the FL-cDNA inferred gene, over-write any previous inferred update
         ## want to store just the protein sequence as part of gene_obj
         if ($gene_obj->get_CDS_length() != 0) {
@@ -3382,11 +3391,13 @@ sub classify_antisense_transcripts {
         push (@cdna_accs, $cdna_acc);
     }
     
+    my %cdna_acc_to_obj = &Ath1_cdnas::batch_create_alignment_objs($dbproc, \@cdna_accs, $seq_ref);
+    
     foreach my $cdna_acc (@cdna_accs) {
         
         print "Processing $cdna_acc (FL:$FLCDNA{$cdna_acc}) for potential antisense.\n";
         
-        my $alignment = &Ath1_cdnas::get_alignment_obj_via_align_acc($dbproc, $cdna_acc, $seq_ref);
+        my $alignment = $cdna_acc_to_obj{$cdna_acc};
         my $spliced_orient = $alignment->get_spliced_orientation();
         
         if ($spliced_orient eq "?") {

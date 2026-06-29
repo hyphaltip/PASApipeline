@@ -532,7 +532,7 @@ sub load_CDNA_alignment_obj {
 
 ####
 sub batch_create_alignment_objs {
-    my ($dbproc, $align_accs_aref) = @_;
+    my ($dbproc, $align_accs_aref, $seq_ref) = @_;
 
     return () unless @$align_accs_aref;
 
@@ -589,7 +589,7 @@ sub batch_create_alignment_objs {
         my $meta = $acc_to_meta{$align_acc};
         my @segs = @{$acc_to_segments{$align_acc}};
 
-        my $alignment = CDNA::CDNA_alignment->new($meta->{cdna_length}, \@segs, undef);
+        my $alignment = CDNA::CDNA_alignment->new($meta->{cdna_length}, \@segs, $seq_ref);
         $alignment->set_align_acc($align_acc);
         $alignment->set_cdna_acc($meta->{cdna_acc});
         $alignment->set_fli_status($meta->{is_fli});
