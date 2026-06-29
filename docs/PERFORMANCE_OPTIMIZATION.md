@@ -495,7 +495,51 @@ Run with: `perl PerlLib/perf_tests.pl [ITERATIONS]`
 3. Compression for all intermediate files
 4. Memory profiling and leak fixes
 
-## Appendix: Performance Test Results
+## Benchmark Results
+
+Benchmarks run with `run_benchmarks.sh`. Test data: 500 sequences × 5000 bp,
+500 alignments, 4994 clustering pairs.
+
+### Tool-Level Benchmarks (Rust vs C++)
+
+| Tool | Rust Time | C++ Time | Speedup | Notes |
+|------|-----------|----------|---------|-------|
+| cdbyank (500 lookups) | 1.70s | 2.45s | 1.44x | In-memory djb2 hash, bulk I/O |
+| faidx_rust (500 lookups) | 2.29s | 2.45s | 1.07x | .fai index, marginal gain for small seqs |
+| pasa (500 alignments) | 30.7ms | 41.4ms | 1.35x | Interval tree O(n log n + k) |
+| slclust (4994 pairs) | 28.9ms | 5.5ms | 0.19x | HashSet overhead dominates at small scale |
+
+### PASA Assembly Scaling (Interval Tree vs O(n²))
+
+| Alignments | C++ Time | Rust Time | Speedup |
+|------------|----------|-----------|---------|
+| 100 | 13.9ms | 10.5ms | 1.33x |
+| 500 | 47.9ms | 32.3ms | 1.49x |
+| 1000 | 236.6ms | 158.0ms | 1.50x |
+| 2000 | 5916.6ms | 3014.0ms | 1.96x |
+
+Speedup increases with alignment count — interval tree's O(n log n + k)
+complexity becomes more beneficial as n grows. At n=2000, Rust is ~2x faster.
+
+### slclust Scaling (HashSet vs vector)
+
+| Pairs | C++ Time | Rust Time | Speedup |
+|-------|----------|-----------|---------|
+| 998 | 6.51ms | 8.73ms | 0.75x |
+| 4998 | 5.45ms | 19.41ms | 0.28x |
+| 9997 | 5.34ms | 31.20ms | 0.17x |
+| 19999 | 5.58ms | 64.55ms | 0.09x |
+
+**Known limitation**: slclust_rust is slower than C++ slclust at all tested
+scales. The HashMap/HashSet overhead (hashing, bucket lookup, potential
+resizing) outweighs the O(1) dedup benefit for small-to-medium degree graphs.
+The C++ version's `vector` with linear dedup has better cache locality.
+
+**Primary benefit of slclust_rust**: Iterative DFS eliminates the need for
+`ulimit -s unlimited` and prevents stack overflow on large clusters — a
+reliability improvement, not a speed improvement.
+
+### Perl-Level Benchmarks
 
 ```
 Fasta_reader:          ~109,000 sequences/sec
