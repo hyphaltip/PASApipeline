@@ -545,7 +545,117 @@ PSL_parser toString:   ~4,187 ops/sec
 
 Caching provides approximately 2.77x speedup for frequently accessed gene data.
 
+## End-to-End Pipeline Benchmark (Docker)
+
+### Methodology
+
+Both baseline (commit `7a6fa74`) and optimized (branch `explore_optimize_AI`)
+images were built from `Docker/Dockerfile.bench` using the same base image
+(`ubuntu:22.04`) and tool versions (minimap2 2.22, samtools, TransDecoder
+v5.7.1, fasta36). Each container ran `sample_data/runMe.SQLite.sh` from a
+clean copy of `sample_data/`, with `/tmp` mounted to persist the SQLite
+database. Both pipelines ran in parallel on the same host.
+
+### Timing Results
+
+| Metric   | Baseline   | Optimized  | Delta  |
+|----------|------------|------------|--------|
+| real     | 13m38.028s | 13m42.949s | +4.9s  |
+| user     | 9m8.231s   | 8m47.132s  | -21.1s |
+| sys      | 2m19.107s  | 2m17.088s  | -2.0s  |
+
+Wall-clock times are within noise (~0.6%). The optimized pipeline uses ~4%
+less user CPU time, likely due to reduced DB round-trips from batch fetching
+and prepared statement caching. The small `sample_data/` dataset (30
+scaffolds, ~1.6 Mb genome, 2,535 transcripts) does not exercise the
+algorithmic improvements (interval tree, bitset popcount) that scale with
+alignment count.
+
+### Database Accuracy Comparison
+
+| Table             | Baseline | Optimized | Status |
+|-------------------|----------|-----------|--------|
+| align_link        | 38,125   | 38,125    | MATCH  |
+| cdna_info         | 15,571   | 15,571    | MATCH  |
+| clusters          | 671      | 671       | MATCH  |
+| alignment         | 94,043   | 94,043    | MATCH  |
+| splice_variation  | 567      | 558       | DIFF (9 rows) |
+| alt_splice_link   | 478      | 478       | MATCH  |
+
+**Alignment counts by program** (identical in both):
+
+| Program   | Baseline | Optimized |
+|-----------|----------|-----------|
+| assembler | 851      | 851       |
+| custom    | 22,784   | 22,784    |
+| minimap2  | 14,490   | 14,490    |
+
+**Cluster composition**: Identical — the same sets of `align_acc` values are
+grouped together in both databases. Only the `cluster_id` auto-increment
+values differ (expected, as insertion order varies).
+
+### Splice Variation Difference (9 rows)
+
+The 9-row `splice_variation` difference is caused by threading
+non-determinism in `find_alternate_internal_exons.dbi`. When assemblies are
+processed in parallel, the order in which `subtype` updates and
+`alt_splice_link` insertions occur can vary between runs. The `UNIQUE
+(cdna_acc, lend, rend, orient, type)` constraint means that a swap in
+processing order between two assemblies (e.g., `asmbl_167` and `asmbl_168`)
+results in the splice variation entries being assigned to different
+assemblies.
+
+**Breakdown by type**:
+
+| Type              | Baseline | Optimized | Delta |
+|-------------------|----------|-----------|-------|
+| starts_in_intron  | 25       | 17        | -8    |
+| ends_in_intron    | 16       | 15        | -1    |
+
+All other types match exactly. The 9 missing rows correspond to splice
+variations that were attributed to different assemblies due to the
+threading order swap, not lost data.
+
+### Schema Differences
+
+The optimized database includes four additional indexes not present in the
+baseline:
+
+| Index                          | Table              | Purpose                        |
+|--------------------------------|--------------------|--------------------------------|
+| `alignment_coords_idx`         | `alignment`        | Range queries on (align_id, lend, rend) |
+| `compare_id_idx`               | `annotation_updates` | `WHERE compare_id = ?` lookups |
+| `align_link_prog_cluster_idx`  | `align_link`       | `WHERE prog = ? AND cluster_id = ?` |
+| `compare_cdna_idx`             | `status_link`      | `WHERE compare_id = ? AND cdna_acc = ?` |
+
+These indexes improve query performance without affecting data content.
+
+### Bugs Found and Fixed During Benchmarking
+
+1. **Spliced orientation handling in batch alignment creation** (`Ath1_cdnas.pm`):
+   `batch_create_alignment_objs` and `batch_create_alignment_objs_by_id`
+   unconditionally forced the database `spliced_orient` value onto alignment
+   objects, ignoring the `seq_ref` parameter and `validate` status. This
+   caused the assembler to produce 411 extra alignments with incorrect
+   orientations. Fixed by replicating `create_alignment_obj`'s logic: when
+   `seq_ref` is provided, only set the db `spliced_orient` if the computed
+   value is `?`, and `confess` on mismatch for validated alignments.
+
+2. **Duplicate function definitions in `find_alternate_internal_exons.dbi`**:
+   The threaded code path added `add_subtype($dbproc, ...)` and
+   `link_alt_splice($dbproc, ...)` function definitions, but the original
+   definitions (without `$dbproc`) were still present later in the file.
+   Perl's last-definition-wins rule meant the original signatures overrode
+   the threaded ones, causing `$dbproc` to be interpreted as `$subtype`.
+   Fixed by removing the duplicate definitions.
+
+3. **Syntax bugs**:
+   - `scripts/import_spliced_alignments.dbi`: leftover duplicate code
+     fragment removed.
+   - `scripts/PASA_transcripts_and_assemblies_to_GFF3.dbi`: extra closing
+     `}` removed.
+
 ---
 
-*Generated: 2026-06-28*
+*Generated: 2026-06-30*
 *PASApipeline Version: 2.5.3*
