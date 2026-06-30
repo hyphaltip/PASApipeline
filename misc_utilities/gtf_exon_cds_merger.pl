@@ -26,7 +26,7 @@ main: {
 
 	foreach my $asmbl_id (keys %$asmbl_id_to_genes_and_components_href) {
 		
-		my $genome_seq = cdbyank_linear($asmbl_id, $genome_fasta);
+		my $genome_seq = get_seq($asmbl_id, $genome_fasta);
 		
 		my $genes_href = $asmbl_id_to_genes_and_components_href->{$asmbl_id};
 

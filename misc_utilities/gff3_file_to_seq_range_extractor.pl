@@ -68,7 +68,7 @@ foreach my $gene_id (@all_gene_ids) {
 
 foreach my $asmbl_id (sort keys %contig_to_gene_list) {
     
-    my $genome_seq = cdbyank_linear($asmbl_id, $fasta_db);
+    my $genome_seq = get_seq($asmbl_id, $fasta_db);
     
 	my $genome_seq_length = length($genome_seq);
 

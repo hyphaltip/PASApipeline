@@ -30,7 +30,7 @@ while (<$fh>) {
 }
 
 foreach my $asmbl_id (keys %data) {
-  my $genome_seq = &cdbyank_linear($asmbl_id, $genome_seq_fasta);
+  my $genome_seq = &get_seq($asmbl_id, $genome_seq_fasta);
   
   foreach my $acc (keys %{$data{$asmbl_id}}) {
 

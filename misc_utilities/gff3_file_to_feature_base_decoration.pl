@@ -22,7 +22,7 @@ my $contig_to_gene_list_href = &GFF3_utils::index_GFF3_gene_objs($gff3_file, $ge
 
 foreach my $asmbl_id (sort keys %$contig_to_gene_list_href) {
     
-    my $genome_seq = cdbyank_linear($asmbl_id, $fasta_db);
+    my $genome_seq = get_seq($asmbl_id, $fasta_db);
 
 	my @pos_type_array = ();
 	for (my $i = 0; $i < length($genome_seq); $i++) {

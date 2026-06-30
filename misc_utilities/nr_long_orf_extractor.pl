@@ -48,7 +48,7 @@ foreach my $asmbl_id (keys %asmbl_id_to_geneobjs) {
 
     my $genome_seq;
     if ($format eq 'GTF') {
-        $genome_seq = &cdbyank_linear($asmbl_id, $genome_fasta_db);
+        $genome_seq = &get_seq($asmbl_id, $genome_fasta_db);
     }
     
     my %seen;
@@ -102,6 +102,7 @@ foreach my $asmbl_id (keys %asmbl_id_to_geneobjs) {
      
                 print "# $gene_id $model_id PROTEIN: $protein\n\n";
                 print "# $gene_id $model_id CDS: $cds_seq\n\n";
+                $isoform->clear_sequence_info();
             }
         }
         else {

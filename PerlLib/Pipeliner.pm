@@ -58,13 +58,14 @@ sub new {
         $VERBOSE = $params{-verbose};
     }
     my $cmds_log = $params{-cmds_log};
-    
-    
+    my $compress_intermediates = $params{-compress_intermediates} || 0;
+
     my $self = { 
         cmd_objs => [],
         checkpoint_dir => undef,
         cmds_log_ofh => undef,
         VERBOSE => $VERBOSE,
+        compress_intermediates => $compress_intermediates,
     };
     
     bless ($self, $packagename);
@@ -177,7 +178,11 @@ sub run {
             if ($ret) {
                                 
                 if (-e $tmp_stderr) {
-                    my $errmsg = `cat $tmp_stderr`;
+                    my $errmsg = '';
+                    if (open my $err_fh, '<', $tmp_stderr) {
+                        { local $/; $errmsg = <$err_fh>; }
+                        close $err_fh;
+                    }
                     if ($errmsg =~ /\w/) {
                         print STDERR "\n\nError encountered::  <!----\nCMD: $cmdstr\n\nErrmsg:\n$errmsg\n--->\n\n";
                     }
@@ -187,10 +192,17 @@ sub run {
                 confess "Error, cmd: $cmdstr died with ret $ret $!";
             }
             else {
-                `touch $checkpoint_file`;
-                if ($?) {
-                    
-                    confess "Error creating checkpoint file: $checkpoint_file";
+                open my $cp_fh, '>', $checkpoint_file or confess "Error creating checkpoint file: $checkpoint_file: $!";
+                close $cp_fh;
+
+                if ($self->{compress_intermediates}) {
+                    foreach my $file ($cmd_obj->get_compress_files()) {
+                        if (-e $file && $file !~ /\.gz$/) {
+                            print STDERR "- Compressing intermediate file: $file\n" if $VERBOSE;
+                            system("gzip -f $file") == 0
+                                or confess "Error compressing $file: $!";
+                        }
+                    }
                 }
             }
 
@@ -235,6 +247,7 @@ sub new {
     my $self = { cmdstr => $cmdstr,
                  checkpoint_file => $checkpoint_file,
                  msg => $message,
+                 compress_files => [],
     };
 
     bless ($self, $packagename);
@@ -260,6 +273,19 @@ sub reset_checkpoint_file {
     my $checkpoint_file = shift;
 
     $self->{checkpoint_file} = $checkpoint_file;
+}
+
+####
+sub set_compress_files {
+    my $self = shift;
+    my @files = @_;
+    $self->{compress_files} = \@files;
+}
+
+####
+sub get_compress_files {
+    my $self = shift;
+    return @{$self->{compress_files}};
 }
 
 1; #EOM

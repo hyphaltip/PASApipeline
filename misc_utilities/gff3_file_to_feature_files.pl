@@ -34,7 +34,7 @@ my $num_genes = 0;
 
 foreach my $asmbl_id (sort keys %$contig_to_gene_list_href) {
     
-    my $genome_seq = cdbyank_linear($asmbl_id, $fasta_db);
+    my $genome_seq = get_seq($asmbl_id, $fasta_db);
     
     my @gene_ids = @{$contig_to_gene_list_href->{$asmbl_id}};
     

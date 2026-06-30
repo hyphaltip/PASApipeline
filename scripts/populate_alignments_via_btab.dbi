@@ -55,6 +55,17 @@ my $prog = $opt_P or die $usage;
 my ($user, $password) = split (/:/, $passwordinfo);
 
 my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password);
+
+## Enable transaction mode for bulk loading
+$dbproc->{dbh}->{AutoCommit} = 0;
+my $BATCH_COMMIT_SIZE = 1000;
+my $batch_counter = 0;
+
+## Prepared statement for alignment inserts (reused for batch)
+my $align_ins_sth = $dbproc->{dbh}->prepare_cached(
+    "insert into alignment (align_id, lend, rend, mlend, mrend, orient, per_id) values (?,?,?,?,?,?,?)"
+);
+
 my %data;
 open (BTAB, "$btab_file") or die "Can't open $btab_file.\n";
 
@@ -83,12 +94,13 @@ while (<BTAB>) { #read btab files
 }
 if (%data) {
     &process_alignment();
+    $dbproc->{dbh}->commit() if $batch_counter >= $BATCH_COMMIT_SIZE;
 }
 
 &store_cluster_links ();
 
+$dbproc->{dbh}->commit();
 $dbproc->disconnect;
-exit(0);
 
 
 
@@ -97,28 +109,26 @@ sub store_cluster_links {
     
     print "\n\nStoring cluster links.\n\n";
 
+    my $cl_ins_sth = $dbproc->{dbh}->prepare_cached(
+        "insert into clusters (annotdb_asmbl_id) values (?)"
+    );
+    my $cl_upd_sth = $dbproc->{dbh}->prepare_cached(
+        "update cluster_link set cluster_id = ? where cdna_acc = ?"
+    );
+
     foreach my $asmbl_id (keys %asmbl_id_to_acc) {
         my @accs = keys %{$asmbl_id_to_acc{$asmbl_id}};
         
-        ## install row in clusters table                                                                                           
-        my $query = qq { insert into clusters (annotdb_asmbl_id) values (?) };
-        &RunMod($dbproc, $query, $asmbl_id);
-        
+        $cl_ins_sth->execute($asmbl_id);
         my $cluster_id = &DB_connect::get_last_insert_id($dbproc);
         
-        ## set the cluster link values
-        $query = qq { update cluster_link set cluster_id = $cluster_id where cdna_acc = ? };
-        my $sth = $dbproc->{dbh}->prepare($query);
         foreach my $acc (@accs) {
-         
-            print "$query ($acc)\n" if $DB_SEE;
-            
-            $sth->execute($acc);
-            
+            $cl_upd_sth->execute($cluster_id, $acc);
         }
-        
-        $sth->finish;
     }
+    
+    $cl_ins_sth->finish;
+    $cl_upd_sth->finish;
 }
 
 
@@ -132,7 +142,6 @@ sub process_alignment() {
     unless ($orientation) {
         die "Error, no orientation for $acc (coords: " . Dumper ($coords_aref) . "\n";
     }
-    
 
     my $query = "insert into cdna_link (cdna_acc, prog, aligned_orient) values (?,?,?)";
     &RunMod ($dbproc, $query, $acc, $prog, $orientation);
@@ -145,18 +154,22 @@ sub process_alignment() {
         foreach my $coordset_href (@$coords_aref) {
             my $genomic_aref = $coordset_href->{genomic};
             my $cdna_aref = $coordset_href->{cdna};
+            my $per_id = $coordset_href->{per_id};
             my $gend5 = $genomic_aref->[0];
             my $gend3 = $genomic_aref->[1];
             my $cdnaend5 = $cdna_aref->[0];
             my $cdnaend3 = $cdna_aref->[1];
-            my $per_id = $coordset_href->{per_id};
             print "g5: $gend5\tg3: $gend3\tc5: $cdnaend5\tc3: $cdnaend3\n" if $SEE;
             ($gend5, $gend3) = sort {$a<=>$b} ($gend5, $gend3);
-            my $query = "insert into alignment (align_id, lend, rend, mlend, mrend, orient, per_id) values (?,?,?,?,?,?,?)";
-            &RunMod($dbproc, $query, $align_id, $gend5, $gend3, $cdnaend5, $cdnaend3, $orientation, $per_id);
-            
+
+            $align_ins_sth->execute($align_id, $gend5, $gend3, $cdnaend5, $cdnaend3, $orientation, $per_id);
         }
-        
+
+        $batch_counter++;
+        if ($batch_counter >= $BATCH_COMMIT_SIZE) {
+            $dbproc->{dbh}->commit();
+            $batch_counter = 0;
+        }
     } else {
         print STDERR "Error: Couldn't get align_id for $acc\n";
     }

@@ -22,11 +22,12 @@ use Data::Dumper;
 use Nuc_translator;
 use Storable qw (nfreeze);
 use Fasta_retriever;
+use threads;
+use Thread_helper;
 
+use vars qw ($opt_M $opt_v $opt_G $opt_d $opt_h $opt_T);
 
-use vars qw ($opt_M $opt_v $opt_G $opt_d $opt_h);
-
-&getopts ('M:G:dhv');
+&getopts ('M:G:dhvT:');
 my $usage =  <<_EOH_;
 
 Script loads the alignment textual representation for the pasa assemblies.
@@ -35,9 +36,10 @@ Script loads the alignment textual representation for the pasa assemblies.
 # -M Mysql database name
 # -G genome_seq fasta db
 # -d Debug
-# 
+#
 # -h print this option menu and quit
 # -v verbose
+# -T <int>   number of threads (default: 2)
 ###################### Process Args and Options #####################
 
 _EOH_
@@ -56,6 +58,7 @@ my $password = &Pasa_conf::getParam("MYSQL_RW_PASSWORD");
 
 our $DEBUG = $opt_d;
 my $genomic_db = $opt_G or die $usage;
+my $NUM_THREADS = $opt_T || 2;
 
 my ($dbproc) = &connect_to_db($MYSQLserver, $MYSQLdb, $user, $password);
 
@@ -75,72 +78,81 @@ foreach my $result (@results) {
   &RunMod($dbproc, $query);
 }
 
-my $insert_query = qq {
-    insert into asmbl_gene_objs (cdna_acc, allow_5prime_partial, allow_3prime_partial, gene_obj)
-        values (?,?,?,?) 
-    };
-
-my $sth = $dbproc->{dbh}->prepare($insert_query);
-
-
-$dbproc->{dbh}->{AutoCommit} = 0;
-my $ids_to_assembly = scalar(@asmbl_ids);
-my $progress = 0;
+$dbproc->disconnect;
 
 my $fasta_retriever = new Fasta_retriever($genomic_db);
 
+my $thread_helper = new Thread_helper($NUM_THREADS);
+
 foreach my $asmbl_id (@asmbl_ids) {
+    $thread_helper->wait_for_open_thread();
+    my $thread = threads->create('process_asmbl_id', $asmbl_id);
+    $thread_helper->add_thread($thread);
+}
+
+$thread_helper->wait_for_all_threads_to_complete();
+
+my @failed_threads = $thread_helper->get_failed_threads();
+if (@failed_threads) {
+    die "Error, " . scalar(@failed_threads) . " threads failed.\n";
+}
+
+print STDERR "\n\ndone.\n";
+exit(0);
+
+
+sub process_asmbl_id {
+    my ($asmbl_id) = @_;
+
+    my ($dbproc) = &connect_to_db($MYSQLserver, $MYSQLdb, $user, $password);
 
     my $genome_seq = $fasta_retriever->get_seq($asmbl_id);
-    
-    #my $genome_seq_fasta = cdbyank($asmbl_id, $genomic_db);
-    #my ($acc, $header, $genome_seq) = linearize($genome_seq_fasta);
-    
-    ## process each pasa assembly, FL and non-FL
-    ## provide diff settings for partial allowances
-    ## store each gene model in the database
-    
+
     my $query = "select al.align_id from align_link al, clusters c, cdna_info ci "
         . " where ci.is_assembly = 1 and ci.id = al.cdna_info_id "
         . " and al.cluster_id = c.cluster_id and c.annotdb_asmbl_id = ?";
     my @results = &do_sql_2D($dbproc, $query, $asmbl_id);
-    
+
     my @cdna_accs;
     foreach my $result (@results) {
         push (@cdna_accs, $result->[0]);
     }
 
-    
+    my $insert_query = qq {
+        insert into asmbl_gene_objs (cdna_acc, allow_5prime_partial, allow_3prime_partial, gene_obj)
+            values (?,?,?,?)
+        };
+
+    $dbproc->{dbh}->{AutoCommit} = 0;
+    my $sth = $dbproc->{dbh}->prepare($insert_query);
+
+    my $progress = 0;
+
     foreach my $align_id (@cdna_accs) {
-        
-        #my $alignment = &Ath1_cdnas::get_alignment_obj_via_acc($dbproc, $asmbl_acc, \$genome_seq);
-        
+
         my $alignment = &Ath1_cdnas::create_alignment_obj($dbproc, $align_id, \$genome_seq);
-     
+
         my $asmbl_acc = $alignment->get_acc();
-        
+
         foreach my $partial_settings ([0,0], [0,1], [1,0], [1,1]) {
             my ($prime5_partial, $prime3_partial) = @$partial_settings;
 
-            
             eval {
-            
                 my $gene_obj = $alignment->get_gene_obj_via_alignment( { '5prime' => $prime5_partial,
                                                                          '3prime' => $prime3_partial } );
-                
+
                 $gene_obj->clear_sequence_info();
                 $gene_obj->{TU_feat_name} = $gene_obj->{Model_feat_name} = "$asmbl_acc [5p:$prime5_partial, 3p:$prime3_partial]";
-                
-                
+
                 my $blob = nfreeze($gene_obj);
                 my $blob_length = length($blob);
-                
+
                 $sth->execute($asmbl_acc, $prime5_partial, $prime3_partial, $blob);
-                
+
                 print "processing $asmbl_acc, $prime5_partial, $prime3_partial, (blob: $blob_length)\n" if $SEE;
                 $progress++;
             };
-            
+
             if ($@) {
                 print STDERR $@;
             }
@@ -148,22 +160,15 @@ foreach my $asmbl_id (@asmbl_ids) {
                 $dbproc->{dbh}->commit;
                 print STDERR "\rCommitted $progress  ";
             }
-            
+
         }
 
     }
+
+    $sth->finish;
+    $dbproc->{dbh}->commit;
+    $dbproc->disconnect;
 }
-
-
-$sth->finish;
-
-print STDERR "\n\ndone.\n";
-$dbproc->{dbh}->commit;
-
-
-
-
-exit(0);
 
 
         

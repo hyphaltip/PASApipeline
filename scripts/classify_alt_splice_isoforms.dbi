@@ -126,8 +126,8 @@ main: {
     my $compare_id = &Ath1_cdnas::get_max_compare_id($dbproc);
     
     if ($compare_id) {
-        my $query = "select cdna_acc, gene_id from annotation_link where compare_id = $compare_id";
-        my @results = &do_sql_2D($dbproc, $query);
+        my $query = "select cdna_acc, gene_id from annotation_link where compare_id = ?";
+        my @results = &do_sql_2D($dbproc, $query, $compare_id);
         foreach my $result (@results) {
             my ($cdna_acc, $gene_id) = @$result;
             $pasa_acc_to_gene{$cdna_acc} = $gene_id;

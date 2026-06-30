@@ -19,6 +19,7 @@ CREATE TABLE alignment (
   per_id NUMERIC DEFAULT NULL
 ) ;
 CREATE INDEX align_idx ON alignment(align_id);
+CREATE INDEX alignment_coords_idx ON alignment(align_id, lend, rend);
 
 CREATE TABLE alt_splice_FL_compare (
   row_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,6 +117,7 @@ CREATE INDEX is_valid_idx ON annotation_updates(is_valid);
 CREATE INDEX alt_splice_idx ON annotation_updates(alt_splice_flag);
 CREATE INDEX lotsastuff_idx ON annotation_updates(gene_id,model_id,is_valid,alt_splice_flag);
 CREATE INDEX modelidx ON annotation_updates(model_id);
+CREATE INDEX compare_id_idx ON annotation_updates(compare_id);
 
 CREATE TABLE asmblPolyA (
   asmbl_acc TEXT PRIMARY KEY,
@@ -165,6 +167,7 @@ CREATE INDEX cdna_info_id_idx ON align_link(cdna_info_id);
 CREATE INDEX cluster_id_idx ON align_link(cluster_id);
 CREATE INDEX progvalididx ON align_link(prog,validate);
 CREATE INDEX al_clid_lend_rend_idx on align_link(cluster_id, lend, rend);
+CREATE INDEX align_link_prog_cluster_idx ON align_link(prog, cluster_id);
 
 CREATE TABLE cdna_sequence (
   accession TEXT PRIMARY KEY,
@@ -236,6 +239,7 @@ CREATE TABLE status_link (
 CREATE INDEX status_link_acc_idx ON status_link(cdna_acc);
 CREATE INDEX updateididx ON status_link(annot_update_id);
 CREATE INDEX status_link_compare_idx ON status_link(compare_id);
+CREATE INDEX compare_cdna_idx ON status_link(compare_id, cdna_acc);
 
 CREATE TABLE subcluster_link (
   subcluster_id INTEGER,

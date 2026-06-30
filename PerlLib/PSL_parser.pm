@@ -187,14 +187,14 @@ sub get_T_span {
 sub get_per_id {
 	my $self = shift;
 
-	my $matches = $self->get_match_count();
-	my $mismatches = $self->get_mismatch_count();
+    return $self->{_per_id} //= do {
+		my $matches = $self->get_match_count();
+		my $mismatches = $self->get_mismatch_count();
 
-	my $per_id = $matches / ($matches + $mismatches) * 100;
+		my $per_id = $matches / ($matches + $mismatches) * 100;
 
-	$per_id = sprintf("%.2f", $per_id);
-	
-	return($per_id);
+		sprintf("%.2f", $per_id);
+    };
 }
 
 
@@ -270,19 +270,14 @@ sub toString {
 	my @genome_coords = @$genome_coords_aref;
 	my @cdna_coords = @$cdna_coords_aref;
 
-	my $align_text = "";
-	while (@genome_coords) {
-		my $genome_coordset = shift @genome_coords;
-		my $cdna_coordset = shift @cdna_coords;
-		
-		if ($align_text) {
-			$align_text .= "....";
-		}
-		$align_text .= $genome_coordset->[0] . "(" . $cdna_coordset->[0] . ")-"
-			. $genome_coordset->[1] . "(" . $cdna_coordset->[1] . ")";
+	my @align_parts;
+	for (my $i = 0; $i < @genome_coords; $i++) {
+		push @align_parts, 
+			$genome_coords[$i]->[0] . "(" . $cdna_coords[$i]->[0] . ")-"
+			. $genome_coords[$i]->[1] . "(" . $cdna_coords[$i]->[1] . ")";
 	}
 	
-	$ret_text .= "\n$align_text\n";
+	$ret_text .= "\n" . join("....", @align_parts) . "\n";
 	
 	return ($ret_text);
 }

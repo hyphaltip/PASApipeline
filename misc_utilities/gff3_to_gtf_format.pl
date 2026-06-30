@@ -29,7 +29,7 @@ main: {
     foreach my $asmbl_id (sort keys %$asmbl_id_to_gene_list_href) {
         
         ## get the genome sequence
-        my $genome_seq = $fasta_retriever->get_seq($asmbl_id);
+        my $genome_seq = &get_seq($asmbl_id, $genome_fasta);
 
         my @gene_ids = @{$asmbl_id_to_gene_list_href->{$asmbl_id}};
         

@@ -215,34 +215,29 @@ sub store_cluster_links {
 
     print "\n\nStoring cluster links.\n\n";
     
+    my $cl_ins_sth = $dbproc->{dbh}->prepare_cached(
+        "insert into clusters (annotdb_asmbl_id) values (?)"
+    );
+    my $cl_upd_sth = $dbproc->{dbh}->prepare_cached(
+        "update align_link set cluster_id = ? where align_acc = ?"
+    );
+    
     foreach my $asmbl_id (keys %$asmbl_to_acc_href) {
         my @accs = keys %{$asmbl_to_acc_href->{$asmbl_id}};
 
-        ## install row in clusters table
-
-        my $query = qq { insert into clusters (annotdb_asmbl_id) values (?) };
-        &RunMod($dbproc, $query, $asmbl_id);
-        
+        $cl_ins_sth->execute($asmbl_id);
         my $cluster_id = &DB_connect::get_last_insert_id($dbproc);
 
-        ## set the cluster link values
-        $query = qq { update align_link set cluster_id = $cluster_id where align_acc = ? };
-        my $sth = $dbproc->{dbh}->prepare($query);
         foreach my $acc (@accs) {
-                        
-            my $info = $cdna_info{$acc};
-            
-            
-            $sth->execute($acc);
-            
+            $cl_upd_sth->execute($cluster_id, $acc);
         }
-        
-        $sth->finish;
     }
+    
+    $cl_ins_sth->finish;
+    $cl_upd_sth->finish;
 
     print STDERR "Committing...\n";
     $dbproc->{dbh}->commit(); 
-
     
     return;
 }
@@ -309,9 +304,9 @@ sub process_match_list {
     
     my $avg_per_id = sprintf ("%.2f", $sum_per_id / $alignment_length * 100);
     
-    my $query = qq { update align_link set avg_per_id = ? where align_id = $align_id };
+    my $query = qq { update align_link set avg_per_id = ? where align_id = ? };
 
-    &RunMod($dbproc, $query, $avg_per_id);
+    &RunMod($dbproc, $query, $avg_per_id, $align_id);
     
 
 

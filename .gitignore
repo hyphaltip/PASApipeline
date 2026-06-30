@@ -1,0 +1,16 @@
+# Rust build output
+pasa_rust/target/
+
+# Compiled binaries
+bin/
+
+# C/C++ object files and compiled binaries
+*.o
+pasa-plugins/cdbtools/cdbfasta/cdbfasta
+pasa-plugins/cdbtools/cdbfasta/cdbyank
+pasa-plugins/cdbtools/cdbfasta/gcdbz
+pasa-plugins/cdbtools/tgi_cl/gcl/GArgs
+pasa-plugins/cdbtools/tgi_cl/gcl/GBase
+pasa-plugins/cdbtools/tgi_cl/gcl/GReadBuf
+pasa-plugins/cdbtools/tgi_cl/gcl/GString
+pasa-plugins/cdbtools/tgi_cl/gcl/gcdb

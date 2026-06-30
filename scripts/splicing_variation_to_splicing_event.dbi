@@ -180,8 +180,26 @@ sub get_pasa_accs_with_variation {
 ####
 sub find_splicing_events_from_features {
     my ($correlated_features_file) = @_;
-    
+
+    # First pass: collect all unique accessions
+    my %all_accs;
     open (my $fh, $correlated_features_file) or die $!;
+    while (<$fh>) {
+        chomp;
+        my (undef, undef, undef, undef, undef, $pasa_A_acc_list,
+            undef, undef, undef, undef, $pasa_B_acc_list) = split (/\t/);
+        $all_accs{$_} = 1 foreach (split(/,/, $pasa_A_acc_list), split(/,/, $pasa_B_acc_list));
+    }
+    close $fh;
+
+    # Batch-fetch all alignment objects
+    my %batch_alignment_objs;
+    if (keys %all_accs) {
+        %batch_alignment_objs = &Ath1_cdnas::batch_create_alignment_objs($dbproc, [keys %all_accs]);
+    }
+
+    # Second pass: process events using pre-fetched alignment objects
+    open ($fh, $correlated_features_file) or die $!;
     while (<$fh>) {
         print "INPUT: $_" if $SEE;
         chomp;
@@ -194,8 +212,7 @@ sub find_splicing_events_from_features {
         
         my %pasa_acc_to_alignment_obj;
         foreach my $acc (@accs_A, @accs_B) {
-            my $alignment_obj = &Ath1_cdnas::get_alignment_obj_via_align_acc($dbproc, $acc);
-            $pasa_acc_to_alignment_obj{$acc} = $alignment_obj;
+            $pasa_acc_to_alignment_obj{$acc} = $batch_alignment_objs{$acc};
         }
         
         ## perform_analysis_based_on_event_type:
@@ -262,7 +279,7 @@ sub find_splicing_events_from_features {
             
         }
     }
-    
+    close $fh;
     
     return;
 }

@@ -264,8 +264,8 @@ sub insert_cluster {
 	if ($DEBUG) {
 		$cluster_id = "DEBUG_cluster_id";
 	} else {
-		my $query = "insert into clusters (annotdb_asmbl_id) values ('$asmbl_id')";
-		&RunMod($dbproc, $query);
+		my $query = "insert into clusters (annotdb_asmbl_id) values (?)";
+		&RunMod($dbproc, $query, $asmbl_id);
 
 		$cluster_id = &DB_connect::get_last_insert_id($dbproc);
 	}
@@ -311,8 +311,8 @@ sub get_align_id {
 
 sub get_alignment_span {
     my ($align_id) = shift;
-    my $query = "select lend, rend from alignment where align_id = $align_id";
-    my @results = &do_sql_2D($dbproc, $query);
+    my $query = "select lend, rend from alignment where align_id = ?";
+    my @results = &do_sql_2D($dbproc, $query, $align_id);
     my @coords;
     foreach my $result (@results) {
         push (@coords, @$result);

@@ -60,7 +60,7 @@ class CDNA_alignment_assembler {
   bool**  encapsulations;
   int num_alignments;
   
-  Lobject* get_max_missing_Lobj(vector<Lobject*>&, map<int,bool>&);
+  Lobject* get_max_missing_Lobj(vector<Lobject*>&, vector<bool>&);
   
 };
 

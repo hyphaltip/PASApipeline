@@ -1,0 +1,12 @@
+[workspace]
+members = ["pasa-assembler", "slclust", "cdbtools"]
+resolver = "2"
+
+[workspace.package]
+version = "2.5.3"
+edition = "2021"
+license = "BSD-3-Clause"
+authors = ["PASA Development Team"]
+
+[workspace.dependencies]
+pasa-assembler = { path = "pasa-assembler" }

@@ -61,9 +61,9 @@ foreach my $result (@results) {
 
 		print "setting $cdna_acc => $aligned_orient\n";
 		
-		my $query = "update align_link set spliced_orient = \'$aligned_orient\' where align_id = $align_id";
+		my $query = "update align_link set spliced_orient = ? where align_id = ?";
 		
-		&RunMod($dbproc, $query);
+		&RunMod($dbproc, $query, $aligned_orient, $align_id);
 
 	}
 	

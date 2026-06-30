@@ -18,6 +18,19 @@ use warnings;
 
 __run_test() unless caller;
 
+## Detect available slclust binary
+my $SLCLUST_RUST = _which("slclust_rust");
+my $SLCLUST      = _which("slclust");
+
+sub _which {
+    my ($tool) = @_;
+    for my $path (split /:/, $ENV{PATH} || '') {
+        return "$path/$tool" if -x "$path/$tool";
+    }
+    return undef;
+}
+
+
 sub build_clusters {
     my @pairs = @_;
     
@@ -50,17 +63,23 @@ sub build_clusters {
     
     my $clusterfile = "/tmp/$uniq_stamp.clusters";
     
-    my $cluster_prog = "slclust"; 
-    if ($CLUSTERPATH) {
-        $cluster_prog = $CLUSTERPATH;
-    }
-    
     system "touch $clusterfile";
     unless (-w $clusterfile) { die "Can't write $clusterfile";}
-    my $cmd = "ulimit -s unlimited && $cluster_prog < $pairfile > $clusterfile";
+    
+    ## Prefer C++ slclust (faster at all tested scales)
+    ## Fall back to slclust_rust (iterative DFS, no ulimit needed)
+    my $cmd;
+    if ($SLCLUST && -x $SLCLUST) {
+        $cmd = "ulimit -s unlimited 2>/dev/null; $SLCLUST < $pairfile > $clusterfile";
+    } elsif ($SLCLUST_RUST && -x $SLCLUST_RUST) {
+        $cmd = "$SLCLUST_RUST < $pairfile > $clusterfile";
+    } else {
+        die "ERROR: Neither slclust nor slclust_rust found in PATH";
+    }
+    
     my $ret = system ($cmd);
     if ($ret) {
-        die "ERROR: Couldn't run cluster properly via path: $cluster_prog.\ncmd: $cmd";
+        die "ERROR: Couldn't run cluster properly via path: $cmd";
     }
     
     my @clusters;

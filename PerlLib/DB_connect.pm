@@ -12,10 +12,6 @@ use Carp;
 use strict;
 use Data::Dumper;
 
-use threads;
-use threads::shared;
-my $LOCKVAR :shared;
-
 
 our @ISA = qw(Exporter);
 
@@ -172,13 +168,9 @@ sub do_sql_2D {
         do {
             $QUERYFAIL = 0; #initialize
             eval {
-                {
-                    lock $LOCKVAR;
-                    
-                    $statementHandle->execute(@values);
-                    while ( @row = $statementHandle->fetchrow_array() ) {
-                        push(@results,[@row]);
-                    }
+                $statementHandle->execute(@values);
+                while ( @row = $statementHandle->fetchrow_array() ) {
+                    push(@results,[@row]);
                 }
             };
             ## exception handling code:
@@ -209,29 +201,23 @@ sub do_sql_2D {
 
 sub RunMod {
     my ($dbproc,$query, @values) = @_;
-    my ($result);
 
     if($::DEBUG||$::DB_SEE) {print "QUERY: $query\tVALUES: @values\n";}
     if($::DEBUG) {
-        $result = "NOT READY";
-    } else {
-        eval {
-            {
-                lock $LOCKVAR;
-                $dbproc->{dbh}->do($query, undef, @values);
-            }
-        };
-        if ($@) { #error occurred
-            
-            ## check for mysql gone away:
-            if ($DBI::errstr =~ /server has gone away|Lost connection/) {
-                ## reestablish connection and try again:
-                &reconnect_to_server($dbproc);
-                return (&RunMod($dbproc, $query, @values));
-            }
-            else {
-                confess "failed query: <$query>\tvalues: @values\nErrors: $DBI::errstr\n";
-            }
+        return;
+    }
+    eval {
+        my $sth = $dbproc->{dbh}->prepare_cached($query);
+        $sth->execute(@values);
+        $sth->finish;
+    };
+    if ($@) {
+        if ($DBI::errstr =~ /server has gone away|Lost connection/) {
+            &reconnect_to_server($dbproc);
+            return (&RunMod($dbproc, $query, @values));
+        }
+        else {
+            confess "failed query: <$query>\tvalues: @values\nErrors: $DBI::errstr\n";
         }
     }
 

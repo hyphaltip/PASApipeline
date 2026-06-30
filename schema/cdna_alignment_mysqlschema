@@ -39,7 +39,8 @@ CREATE TABLE alignment (
   per_id float default NULL,
   PRIMARY KEY  (feat_id),
   KEY align_idx (align_id),
-  KEY feat_id_idx (feat_id)
+  KEY feat_id_idx (feat_id),
+  KEY alignment_coords_idx (align_id, lend, rend)
 ) ;
 
 --
@@ -184,7 +185,8 @@ CREATE TABLE annotation_updates (
   PRIMARY KEY  (update_id),
   KEY is_valid_idx (is_valid),
   KEY alt_splice_idx (alt_splice_flag),
-  KEY modelidx (model_id)
+  KEY modelidx (model_id),
+  KEY compare_id_idx (compare_id)
 ) ;
 
 --
@@ -253,7 +255,8 @@ CREATE TABLE align_link (
   KEY cdna_info_id_idx (cdna_info_id),
   KEY cluster_id_idx (cluster_id),
   KEY progvalididx (prog,validate),
-  KEY al_clid_lend_rend_idx (cluster_id, lend, rend)
+  KEY al_clid_lend_rend_idx (cluster_id, lend, rend),
+  KEY align_link_prog_cluster_idx (prog, cluster_id)
 ) ;
 
 --
@@ -362,7 +365,8 @@ CREATE TABLE status_link (
   PRIMARY KEY  (status_link_id),
   KEY status_link_acc_idx (cdna_acc),
   KEY updateididx (annot_update_id),
-  KEY compare_idx (compare_id)
+  KEY compare_idx (compare_id),
+  KEY compare_cdna_idx (compare_id, cdna_acc)
 ) ;
 
 --

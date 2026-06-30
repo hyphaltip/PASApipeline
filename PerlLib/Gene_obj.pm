@@ -240,6 +240,8 @@ sub erase_gene_structure {
     $self->{CDS_seq_length} = 0;
     $self->{cDNA_sequence} = 0;
     $self->{cDNA_seq_length} = 0;
+    $self->{gene_sequence} = 0;
+    $self->{gene_sequence_length} = 0;
 }
 
 
@@ -924,16 +926,18 @@ B<Returns:> @exons
 
 sub get_exons {
     my ($self) = shift;
-    if ($self->{mRNA_exon_objs} != 0) {
-        my @exons = (@{$self->{mRNA_exon_objs}});
-        @exons = sort {$a->{end5}<=>$b->{end5}} @exons;
-        if ($self->{strand} eq '-') {
-            @exons = reverse (@exons);
+    if ($self->{mRNA_exon_objs} && @{$self->{mRNA_exon_objs}}) {
+        unless ($self->{_sorted_exons}) {
+            my @exons = @{$self->{mRNA_exon_objs}};
+            @exons = sort {$a->{end5}<=>$b->{end5}} @exons;
+            if ($self->{strand} eq '-') {
+                @exons = reverse @exons;
+            }
+            $self->{_sorted_exons} = \@exons;
         }
-        return (@exons);
+        return @{$self->{_sorted_exons}};
     } else {
-        my @x = ();
-        return (@x); #empty array 
+        return (); # empty array
     }
 }
 
@@ -1265,7 +1269,7 @@ sub create_cDNA_sequence {
     my @exons = $self->get_exons();
     my $strand = $self->{strand};
     my $cDNA_seq = "";
-    foreach my $exon_obj (sort {$a->{end5}<=>$b->{end5}} @exons) {
+    foreach my $exon_obj (@exons) {
         my $c1 = $exon_obj->{end5};
         my $c2 = $exon_obj->{end3};
         ## sequence retrieval coordinates must be in forward orientation
@@ -1306,7 +1310,7 @@ sub create_CDS_sequence {
     my @exons = $self->get_exons();
     my $strand = $self->{strand};
     my $cds_seq = "";
-    foreach my $exon_obj (sort {$a->{end5}<=>$b->{end5}} @exons) {
+    foreach my $exon_obj (@exons) {
         my $CDS_obj = $exon_obj->get_CDS_obj();
         if (ref $CDS_obj) {
             my ($c1, $c2) = $CDS_obj->get_CDS_end5_end3();
@@ -4701,6 +4705,9 @@ sub DESTROY {
 
     warn "DESTROYING gene_obj: " . $self->{TU_feat_name} . "," . $self->{Model_feat_name} . "\n" if $main::DEBUG;
 
+    # Break isoform reference cycles to allow garbage collection
+    $self->{additional_isoforms} = [];
+    $self->{num_additional_isoforms} = 0;
 }
 
 

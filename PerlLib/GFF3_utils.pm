@@ -14,6 +14,15 @@ use Carp;
 use URI::Escape;
 use Data::Dumper;
 
+my $ID_RE = qr/ID="?([^;\s"]+)"?;?/;
+my $NAME_RE = qr/Name="?([^\;"]+)"?/;
+my $NOTE_RE = qr/Note="?([^\;"]+)"?/;
+my $ALIAS_RE = qr/Alias=([^;]+)/;
+my $PARENT_RE = qr/Parent="?([^;\s"]+)"?;?/;
+my $FEAT_TYPE_RE = qr/^(gene|mRNA|transcript|CDS|exon)$/;
+my $TAB_RE = qr/\t/;
+my $WORD_RE = qr/\w/;
+
 
 ####
 sub index_GFF3_gene_objs {
@@ -43,35 +52,36 @@ sub index_GFF3_gene_objs {
 
     my %source_tracker;
     
-    my $counter = 0;
-    # print STDERR "\n-parsing file $gff_filename\n";
+my $counter = 0;
     while (<$fh>) {
 
 		chomp;
         
-        unless (/\w/) { next;} # empty line
+        unless (/$WORD_RE/) { next;}
         
-        if (/^\#/) { next; } # comment entry in gff3
+        if (/^\#/) { next; }
 
-        my @x = split (/\t/);
+        my @x = split($TAB_RE);
 
 		unless (scalar @x >= 9) {
 			print STDERR "-ignoring line $_\n";
 			next;
 		}
 		
-        my ($asmbl_id, $source, $feat_type, $lend, $rend, $orient, $cds_phase, $gene_info) = ($x[0], $x[1], $x[2], $x[3], $x[4], $x[6], $x[7], $x[8]);    
+        my ($asmbl_id, $source, $feat_type, $lend, $rend, $orient, $cds_phase, $gene_info) = @x[0,1,2,3,4,6,7,8];
         
         if ($contig_id && $asmbl_id ne $contig_id) { next; }
 
-        unless ($feat_type) { die "Error, $_, no feat_type: line\[$_\]"; }
+        unless ($feat_type) { die "Error, $_, no feat_type: line[$_]"; }
         
-        unless ($feat_type =~ /^(gene|mRNA|transcript|CDS|exon)$/) { next;} 
+        unless ($feat_type =~ $FEAT_TYPE_RE) { next;} 
 
         $gene_info = uri_unescape($gene_info);
         
-        $gene_info =~ /ID=\"?([^;\s\"]+)\"?;?/;
-        my $id = $1 or die "Error, couldn't get the id field $_";
+        if ($gene_info !~ $ID_RE) {
+            die "Error, couldn't get the id field $_";
+        }
+        my $id = $1;
         
         if (exists $source_tracker{$id} && $source_tracker{$id} ne $source) {
             confess "Error, gene ID $id is given source $source when previously encountered with source $source_tracker{$id} ";
@@ -79,31 +89,29 @@ sub index_GFF3_gene_objs {
         
         if ($feat_type eq 'gene') {
             my $gene_name = "";
-            if ($gene_info =~ /Name=\"?([^\;\"]+)\"?/) {
+            if ($gene_info =~ $NAME_RE) {
                 $gene_name = $1;
-			}
-			else {
-				$gene_name = "";
-			}
+            }
             
-            if ($gene_info =~ /Note=\"?([^\;\"]+)\"?/) {
+            if ($gene_info =~ $NOTE_RE) {
                 $gene_name .= " $1";
             }
-                        			
+                         			
             $gene_names{$id} = $gene_name;
 			
 		}
         
-		if ($gene_info =~ /Alias=([^;]+)/) {
-			my $locus = $1;
-			$loci{$id} = $locus;
+		if ($gene_info =~ $ALIAS_RE) {
+			$loci{$id} = $1;
 		}
 		
 	 
-        if ($feat_type eq 'gene') { next;} ## beyond this pt, gene is not needed.
+        if ($feat_type eq 'gene') { next;}
         
-        $gene_info =~ /Parent=\"?([^;\s\"]+)\"?;?/;
-        my $parent = $1 or die "Error, couldn't get the parent info $_";
+        if ($gene_info !~ $PARENT_RE) {
+            die "Error, couldn't get the parent info $_";
+        }
+        my $parent = $1;
                 
         # print "id: $id, parent: $parent\n";
         

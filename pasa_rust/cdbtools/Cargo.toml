@@ -1,0 +1,18 @@
+[package]
+name = "cdbtools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "cdbtools"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cdbyank_rust"
+path = "src/bin/cdbyank.rs"
+
+[[bin]]
+name = "faidx_rust"
+path = "src/bin/faidx.rs"

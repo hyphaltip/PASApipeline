@@ -6,9 +6,26 @@ use Carp;
 use threads;
 use threads::shared;
 
-
 my $LOCKVAR :shared;
 our $DEBUG = 0;
+
+my %COMPRESS_OPEN = (
+    '.gz'  => '-|',
+    '.bz2' => '-|',
+);
+
+sub _open_compressed {
+    my $filename = shift;
+    for my $ext (keys %COMPRESS_OPEN) {
+        if ($filename =~ /\Q$ext\E$/) {
+            my $cmd = $ext eq '.gz' ? "zcat" : "bzcat";
+            open(my $fh, "$COMPRESS_OPEN{$ext} $cmd \Q$filename\E |") 
+                or die "Error, cannot open compressed file: $filename";
+            return ($fh, 1);
+        }
+    }
+    return (undef, 0);
+}
 
 sub new {
     my ($packagename) = shift;
@@ -91,32 +108,37 @@ sub get_seq {
         confess "Error, need acc as param";
     }
 
-
-    my $seq = "";
-
     {
         lock $LOCKVAR;
     
         my $file_pos = $self->{acc_to_pos_index}->{$acc} or confess "Error, no seek pos for acc: $acc";
         
-        my $fh = $self->refresh_fh();
-        seek($fh, $file_pos, 0);
+        my ($fh, $is_compressed) = _open_compressed($self->{filename});
+        
+        if (!$is_compressed) {
+            $fh = $self->{fh};
+            unless ($fh && fileno($fh)) {
+                $fh = $self->refresh_fh();
+            }
+            seek($fh, $file_pos, 0);
+        }
 
         print STDERR "seeking $acc -> $file_pos\n" if $DEBUG;
         
+        my @seq_lines;
         while (<$fh>) {
             if (/^>/) {
                 print STDERR "   reached $_, stopping\n" if $DEBUG;
                 last;
             }
-            $seq .= $_;
+            push @seq_lines, $_;
         }
         print STDERR "-done seeking $acc\n\n" if $DEBUG;
-    }
-    
-    $seq =~ s/\s+//g;
         
-    return($seq);
+        my $seq = join('', @seq_lines);
+        $seq =~ s/\s+//g;
+        return $seq;
+    }
 }
     
     

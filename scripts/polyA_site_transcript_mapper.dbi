@@ -165,6 +165,10 @@ foreach my $result (@results) {
 }
 
 
+## Batch-fetch all alignment objects at once
+my @all_align_ids = keys %align_id_to_cdna_acc;
+my %align_id_to_obj = &Ath1_cdnas::batch_create_alignment_objs_by_id($dbproc, \@all_align_ids);
+
 ## Analyze each poly-A containing assembly and highlight the poly-A site.
 foreach my $align_id (sort {$cdna_to_asmbl_id{$a} cmp $cdna_to_asmbl_id{$b}} keys %cdna_to_asmbl_id) {
         
@@ -200,7 +204,7 @@ foreach my $align_id (sort {$cdna_to_asmbl_id{$a} cmp $cdna_to_asmbl_id{$b}} key
     
     my $rend_trim_length = $untrimmed_length - $trim_size; # only relevant if polyA_end == 'rend'.
             
-    my $cdna_obj = &Ath1_cdnas::create_alignment_obj ($dbproc, $align_id, \$genomic_seq);
+    my $cdna_obj = $align_id_to_obj{$align_id};
     my $orientation = $cdna_obj->get_orientation();
     my ($lend, $rend) = $cdna_obj->get_coords();
     my ($mlend, $mrend) = $cdna_obj->get_mcoords();
