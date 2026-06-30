@@ -241,16 +241,6 @@ sub store_cluster_links {
     
     return;
 }
-        
-        $sth->finish;
-    }
-
-    print STDERR "Committing...\n";
-    $dbproc->{dbh}->commit(); 
-
-    
-    return;
-}
 
 
 
