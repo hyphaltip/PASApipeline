@@ -368,9 +368,9 @@ foreach my $asmbl_id (@asmbl_ids) {
                             ## got overlap
                             print "CANDIDATE: ($cdna, $other_acc)\n";
                             
-                            &add_subtype($subtype, $sv_id, $other_sv_id);
+                            &add_subtype($dbproc, $subtype, $sv_id, $other_sv_id);
                             
-                            &link_alt_splice($sv_id, $other_sv_id);
+                            &link_alt_splice($dbproc, $sv_id, $other_sv_id);
                             
                         }
                     }
@@ -394,37 +394,6 @@ foreach my $asmbl_id (@asmbl_ids) {
 
 
 exit(0);
-
-
-#### 
-sub add_subtype {
-    my ($subtype, @sv_id_list) = @_;
-    foreach my $sv_id (@sv_id_list) {
-        
-        my $query = "update splice_variation set subtype = ? where sv_id = ?";
-        &RunMod($dbproc, $query, $subtype, $sv_id);
-    }
-}
-
-
-####
-sub link_alt_splice {
-    my ($sv_id_A, $sv_id_B) = @_;
-    
-    foreach my $pair_aref ([$sv_id_A, $sv_id_B], [$sv_id_B, $sv_id_A]) {
-        my ($entry_A, $entry_B) = @$pair_aref;
-        
-        eval {
-            my $query = "insert into alt_splice_link (sv_id_A, sv_id_B) values (?,?)";
-            &RunMod($dbproc, $query, $entry_A, $entry_B);
-        };
-
-        if ($@) {
-            # rid excep-handling later; keep now for debugging purposes.
-            print $@;
-        }
-    }
-}
 
 
 ####

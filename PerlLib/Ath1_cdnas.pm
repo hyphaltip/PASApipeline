@@ -607,10 +607,28 @@ sub batch_create_alignment_objs {
             $alignment->set_orientation('+');
         }
 
-        my $spliced_orient = $meta->{spliced_orient};
-        if ($spliced_orient && $spliced_orient ne '?') {
-            $alignment->set_spliced_orientation($spliced_orient);
-            $alignment->force_spliced_validation($spliced_orient);
+        my $computed_spliced_orient = $alignment->get_spliced_orientation();
+
+        if (! $seq_ref) {
+            my $spliced_orient = $meta->{spliced_orient};
+            unless ($spliced_orient) {
+                confess "Error, no sequence as input parameter and spliced validation not avail in database.";
+            }
+            if ($spliced_orient ne '?') {
+                $alignment->set_spliced_orientation($spliced_orient);
+                $alignment->force_spliced_validation($spliced_orient);
+            }
+        }
+        else {
+            if ($meta->{validate}) {
+                my $spliced_orient = $meta->{spliced_orient};
+                if ($computed_spliced_orient eq '?' && $spliced_orient ne '?') {
+                    $alignment->set_spliced_orientation($spliced_orient);
+                }
+                if ($computed_spliced_orient ne '?' && $spliced_orient ne $computed_spliced_orient) {
+                    confess "Error, spliced orient in db ($spliced_orient) differs from calculated spliced orient ($computed_spliced_orient) ";
+                }
+            }
         }
 
         $acc_to_alignment{$align_acc} = $alignment;
@@ -693,10 +711,28 @@ sub batch_create_alignment_objs_by_id {
             $alignment->set_orientation('+');
         }
 
-        my $spliced_orient = $meta->{spliced_orient};
-        if ($spliced_orient && $spliced_orient ne '?') {
-            $alignment->set_spliced_orientation($spliced_orient);
-            $alignment->force_spliced_validation($spliced_orient);
+        my $computed_spliced_orient = $alignment->get_spliced_orientation();
+
+        if (! $seq_ref) {
+            my $spliced_orient = $meta->{spliced_orient};
+            unless ($spliced_orient) {
+                confess "Error, no sequence as input parameter and spliced validation not avail in database.";
+            }
+            if ($spliced_orient ne '?') {
+                $alignment->set_spliced_orientation($spliced_orient);
+                $alignment->force_spliced_validation($spliced_orient);
+            }
+        }
+        else {
+            if ($meta->{validate}) {
+                my $spliced_orient = $meta->{spliced_orient};
+                if ($computed_spliced_orient eq '?' && $spliced_orient ne '?') {
+                    $alignment->set_spliced_orientation($spliced_orient);
+                }
+                if ($computed_spliced_orient ne '?' && $spliced_orient ne $computed_spliced_orient) {
+                    confess "Error, spliced orient in db ($spliced_orient) differs from calculated spliced orient ($computed_spliced_orient) ";
+                }
+            }
         }
 
         $id_to_alignment{$align_id} = $alignment;
