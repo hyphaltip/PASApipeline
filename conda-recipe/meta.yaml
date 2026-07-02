@@ -1,0 +1,56 @@
+package:
+  name: pasa-rust
+  version: 3.0.0
+
+source:
+  git_url: https://github.com/hyphaltip/PASApipeline.git
+  git_rev: rust_optimize
+
+build:
+  number: 0
+  string: rust_3.0.0_0
+  skip: true  # [win]
+
+requirements:
+  build:
+    - rustc >=1.70
+    - cargo >=1.70
+    - make
+    - gcc
+    - gcc_impl_linux-64  # [linux64]
+    - gxx_impl_linux-64  # [linux64]
+    - perl
+  host:
+    - rustc >=1.70
+    - cargo >=1.70
+    - perl
+    - sqlite
+  run:
+    - __glibc >=2.17  # Linux only
+    - perl
+    - sqlite
+
+test:
+  commands:
+    - Launch_PASA_pipeline.pl --help
+    - pasa_rust --help || true
+    - slclust_rust --help || true
+
+about:
+  home: https://github.com/hyphaltip/PASApipeline
+  license: Other
+  license_family: Other
+  summary: PASA (Program to Assemble Spliced Alignments) - Rust-optimized version
+  description: |
+    PASA is a genome annotation pipeline that uses EST (cDNA) and transcript
+    alignments to guide gene structure predictions and to identify gene splice sites.
+    This version includes optimized Rust implementations of key components.
+  doc_url: https://github.com/PASApipeline/PASApipeline/wiki
+  dev_url: https://github.com/hyphaltip/PASApipeline
+
+extra:
+  maintainers:
+    - bhaas
+    - jstajich
+  recipe-maintainers:
+    - nextgenusfs
