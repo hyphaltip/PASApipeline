@@ -189,6 +189,25 @@ else
     echo "[PASA install] WARNING: TransDecoder not found at ${TRANSDECODER_UTIL} or ${BIN_DIR}" >&2
 fi
 
+# Fix conda TransDecoder symlinks: conda package creates indirection
+# (bin -> opt -> util) which breaks standard PATH discovery.
+# Correct bin symlinks to point directly to actual scripts.
+echo "[PASA install] Validating TransDecoder bin symlinks..."
+for tool in TransDecoder.LongOrfs TransDecoder.Predict; do
+    bin_link="${BIN_DIR}/${tool}"
+    if [ -L "${bin_link}" ]; then
+        # Symlink exists; check if it points to actual executable
+        if ! readlink -f "${bin_link}" | xargs test -x 2>/dev/null; then
+            actual_tool="${INSTALL_PREFIX}/opt/transdecoder/util/${tool}"
+            if [ -x "${actual_tool}" ]; then
+                echo "[PASA install] Correcting ${tool} symlink (conda indirection) ..."
+                rm "${bin_link}"
+                ln -s "../../opt/transdecoder/util/${tool}" "${bin_link}"
+            fi
+        fi
+    fi
+done
+
 # Make binaries executable
 echo "[PASA install] Setting executable permissions..."
 chmod +x "${BIN_DIR}"/* 2>/dev/null || true
