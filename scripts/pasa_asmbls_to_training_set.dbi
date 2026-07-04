@@ -118,10 +118,19 @@ main: {
         # Resolve symlinks to get the actual file location
         my $real_path = `readlink -f $transdecoder_longorf 2>/dev/null`;
         chomp($real_path);
-        if ($real_path && -x $real_path && $real_path =~ m{(.+)/TransDecoder\.LongOrfs$}) {
-            $transdecoder_dir = $1;
-        } elsif ($transdecoder_longorf =~ m{(.+)/TransDecoder\.LongOrfs$}) {
-            $transdecoder_dir = $1;
+
+        # Extract directory, handling case where util scripts are in util/ subdir
+        if ($real_path && -x $real_path) {
+            if ($real_path =~ m{(.+)/util/TransDecoder\.LongOrfs$}) {
+                # conda package: scripts are in opt/transdecoder/util/
+                $transdecoder_dir = $1;
+            } elsif ($real_path =~ m{(.+)/TransDecoder\.LongOrfs$}) {
+                # bundled or simple path
+                $transdecoder_dir = $1;
+            } else {
+                # Fallback to bundled location
+                $transdecoder_dir = "$FindBin::Bin/../pasa-plugins/transdecoder";
+            }
         } else {
             # Fallback to bundled location
             $transdecoder_dir = "$FindBin::Bin/../pasa-plugins/transdecoder";
