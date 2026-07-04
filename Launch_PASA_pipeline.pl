@@ -261,23 +261,33 @@ my $PLUGINS_DIR = "$ENV{PASAHOME}/pasa-plugins";
 
 ## Helper function to find tools in PATH first, fall back to pasa-plugins directory
 sub find_tool {
-    my ($tool_name) = @_;
+    my ($tool_name, $optional) = @_;
+    $optional ||= 0;
 
     # First, try to find the tool in PATH (Unix-standard approach)
     my $path_tool = `which $tool_name 2>/dev/null`;
     chomp($path_tool);
     if ($path_tool && -x $path_tool) {
+        print STDERR "[INFO] Found $tool_name in PATH: $path_tool\n";
         return $path_tool;
     }
 
     # Fall back to the hardcoded pasa-plugins location (for bundled tools)
     my $plugin_tool = "$PLUGINS_DIR/transdecoder/$tool_name";
     if (-x $plugin_tool) {
+        print STDERR "[INFO] Found $tool_name in pasa-plugins: $plugin_tool\n";
         return $plugin_tool;
     }
 
-    # If neither found, return the plugin path anyway (will fail later with clear error message)
-    return $plugin_tool;
+    # Tool not found
+    if ($optional) {
+        print STDERR "[WARN] Optional tool not found: $tool_name (checked PATH and $plugin_tool)\n";
+        return undef;
+    } else {
+        die "FATAL: Required tool '$tool_name' not found.\n" .
+            "  Checked: PATH and $plugin_tool\n" .
+            "  Ensure transdecoder conda package is installed or tool is in \$PASAHOME/pasa-plugins/transdecoder/\n";
+    }
 }
 
 ## Resolve tool paths once at startup (not repeatedly during execution)

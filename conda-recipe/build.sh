@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Note: git submodules (pasa-plugins including transdecoder) are automatically
+# initialized by conda-build due to git_submodules: true in meta.yaml
+
 # Use the install.sh script to build and install
 mkdir -p "$PREFIX/opt/pasa-rust-3.0"
 CONDA_PREFIX="$PREFIX" "$SRC_DIR/scripts/install.sh" --install-prefix "$PREFIX/opt/pasa-rust-3.0"

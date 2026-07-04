@@ -5,6 +5,7 @@ package:
 source:
   git_url: https://github.com/hyphaltip/PASApipeline.git
   git_rev: rust_optimize
+  git_submodules: true
 
 build:
   number: 0

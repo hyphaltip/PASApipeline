@@ -167,26 +167,32 @@ else
 fi
 
 # Setup TransDecoder for PASA
-# PASA expects TransDecoder in its own pasa-plugins directory
-# First ensure the transdecoder plugin directory exists
+# TransDecoder can come from: conda package, bundled in pasa-plugins submodule, or absent
+# PASA's find_tool() will search PATH first, then fall back to pasa-plugins/transdecoder/
+
+# Ensure the transdecoder plugin directory exists (for fallback lookup)
 mkdir -p "${SRC_DIR}/pasa-plugins/transdecoder"
 
-# Look for TransDecoder in conda/pixi standard location: opt/transdecoder/util/
+# Priority 1: Check if conda transdecoder is installed
 TRANSDECODER_UTIL="${INSTALL_PREFIX}/opt/transdecoder/util"
 if [ -f "${TRANSDECODER_UTIL}/TransDecoder.LongOrfs" ]; then
-    echo "[PASA install] Creating symlinks to pixi TransDecoder from ${TRANSDECODER_UTIL}..."
-    (cd "${SRC_DIR}/pasa-plugins/transdecoder" && \
-     ln -sf ../../../../../opt/transdecoder/util/TransDecoder.LongOrfs TransDecoder.LongOrfs 2>/dev/null || true && \
-     ln -sf ../../../../../opt/transdecoder/util/TransDecoder.Predict TransDecoder.Predict 2>/dev/null || true)
-    echo "[PASA install] Created TransDecoder symlinks at ${SRC_DIR}/pasa-plugins/transdecoder"
+    echo "[PASA install] Found conda TransDecoder at ${TRANSDECODER_UTIL}"
+    # Ensure it's in bin for standard PATH discovery
+    if [ ! -f "${BIN_DIR}/TransDecoder.LongOrfs" ]; then
+        echo "[PASA install] Symlinking conda TransDecoder to bin..."
+        ln -sf "../../opt/transdecoder/util/TransDecoder.LongOrfs" "${BIN_DIR}/TransDecoder.LongOrfs" 2>/dev/null || true
+        ln -sf "../../opt/transdecoder/util/TransDecoder.Predict" "${BIN_DIR}/TransDecoder.Predict" 2>/dev/null || true
+    fi
 elif [ -f "${BIN_DIR}/TransDecoder.LongOrfs" ]; then
-    # Fallback: symlink from bin if available
-    (cd "${SRC_DIR}/pasa-plugins/transdecoder" && \
-     ln -sf ../../../bin/TransDecoder.LongOrfs TransDecoder.LongOrfs 2>/dev/null || true && \
-     ln -sf ../../../bin/TransDecoder.Predict TransDecoder.Predict 2>/dev/null || true)
-    echo "[PASA install] Created TransDecoder symlinks from bin"
+    echo "[PASA install] Found TransDecoder in bin (likely from conda/pixi PATH)"
 else
-    echo "[PASA install] WARNING: TransDecoder not found at ${TRANSDECODER_UTIL} or ${BIN_DIR}" >&2
+    # Priority 2: Check for bundled TransDecoder in git submodule
+    if [ -f "${PASA_ROOT}/pasa-plugins/transdecoder/TransDecoder.LongOrfs" ]; then
+        echo "[PASA install] Found bundled TransDecoder in pasa-plugins submodule"
+    else
+        echo "[PASA install] WARNING: TransDecoder not found (conda package or bundled)" >&2
+        echo "[PASA install]   Checked: ${TRANSDECODER_UTIL}, ${BIN_DIR}, ${PASA_ROOT}/pasa-plugins/transdecoder/" >&2
+    fi
 fi
 
 # Fix conda TransDecoder symlinks: conda package creates indirection
