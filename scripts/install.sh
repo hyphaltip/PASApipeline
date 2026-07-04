@@ -158,6 +158,37 @@ if [ -d "${PASA_ROOT}/scripts" ]; then
     cp -r "${PASA_ROOT}/scripts" "${SRC_DIR}/" || true
 fi
 
+# Copy misc_utilities (required for minimap2 and other alignment processing)
+if [ -d "${PASA_ROOT}/misc_utilities" ]; then
+    cp -r "${PASA_ROOT}/misc_utilities" "${SRC_DIR}/" || true
+    echo "[PASA install] Installed misc_utilities to ${SRC_DIR}/misc_utilities"
+else
+    echo "[PASA install] WARNING: misc_utilities directory not found at ${PASA_ROOT}/misc_utilities" >&2
+fi
+
+# Setup TransDecoder for PASA
+# PASA expects TransDecoder in its own pasa-plugins directory
+# First ensure the transdecoder plugin directory exists
+mkdir -p "${SRC_DIR}/pasa-plugins/transdecoder"
+
+# Look for TransDecoder in conda/pixi standard location: opt/transdecoder/util/
+TRANSDECODER_UTIL="${INSTALL_PREFIX}/opt/transdecoder/util"
+if [ -f "${TRANSDECODER_UTIL}/TransDecoder.LongOrfs" ]; then
+    echo "[PASA install] Creating symlinks to pixi TransDecoder from ${TRANSDECODER_UTIL}..."
+    (cd "${SRC_DIR}/pasa-plugins/transdecoder" && \
+     ln -sf ../../../../../opt/transdecoder/util/TransDecoder.LongOrfs TransDecoder.LongOrfs 2>/dev/null || true && \
+     ln -sf ../../../../../opt/transdecoder/util/TransDecoder.Predict TransDecoder.Predict 2>/dev/null || true)
+    echo "[PASA install] Created TransDecoder symlinks at ${SRC_DIR}/pasa-plugins/transdecoder"
+elif [ -f "${BIN_DIR}/TransDecoder.LongOrfs" ]; then
+    # Fallback: symlink from bin if available
+    (cd "${SRC_DIR}/pasa-plugins/transdecoder" && \
+     ln -sf ../../../bin/TransDecoder.LongOrfs TransDecoder.LongOrfs 2>/dev/null || true && \
+     ln -sf ../../../bin/TransDecoder.Predict TransDecoder.Predict 2>/dev/null || true)
+    echo "[PASA install] Created TransDecoder symlinks from bin"
+else
+    echo "[PASA install] WARNING: TransDecoder not found at ${TRANSDECODER_UTIL} or ${BIN_DIR}" >&2
+fi
+
 # Make binaries executable
 echo "[PASA install] Setting executable permissions..."
 chmod +x "${BIN_DIR}"/* 2>/dev/null || true

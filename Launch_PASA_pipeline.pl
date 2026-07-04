@@ -255,9 +255,34 @@ my %advanced_prog_opts = &parse_advanced_prog_opts();
 
 ## Add a few env variables:
 
-my $UTILDIR = "$ENV{PASAHOME}/scripts"; 
+my $UTILDIR = "$ENV{PASAHOME}/scripts";
 my $PLUGINS_DIR = "$ENV{PASAHOME}/pasa-plugins";
 
+
+## Helper function to find tools in PATH first, fall back to pasa-plugins directory
+sub find_tool {
+    my ($tool_name) = @_;
+
+    # First, try to find the tool in PATH (Unix-standard approach)
+    my $path_tool = `which $tool_name 2>/dev/null`;
+    chomp($path_tool);
+    if ($path_tool && -x $path_tool) {
+        return $path_tool;
+    }
+
+    # Fall back to the hardcoded pasa-plugins location (for bundled tools)
+    my $plugin_tool = "$PLUGINS_DIR/transdecoder/$tool_name";
+    if (-x $plugin_tool) {
+        return $plugin_tool;
+    }
+
+    # If neither found, return the plugin path anyway (will fail later with clear error message)
+    return $plugin_tool;
+}
+
+## Resolve tool paths once at startup (not repeatedly during execution)
+my $TRANSDECODER_LONGORF = &find_tool("TransDecoder.LongOrfs");
+my $TRANSDECODER_PREDICT = &find_tool("TransDecoder.Predict");
 
 
 unless ($RUN_PIPELINE || $COMPARE_TO_ANNOT || $ALT_SPLICE || $CREATE_DB) {
@@ -527,14 +552,14 @@ if ($RUN_PIPELINE) {
             $td_longorf_params = " -S ";
         }
         
-        push (@cmds, { prog => "$PLUGINS_DIR/transdecoder/TransDecoder.LongOrfs",
+        push (@cmds, { prog => $TRANSDECODER_LONGORF,
                        params => "$td_params $td_longorf_params",
                        input => undef,
                        output => undef,
                        chkpt => "transdecoder_longorfs.ok",
               },
             );
-        push (@cmds, { prog => "$PLUGINS_DIR/transdecoder/TransDecoder.Predict",
+        push (@cmds, { prog => $TRANSDECODER_PREDICT,
                        params => $td_params,
                        input => undef,
                        output => undef,
