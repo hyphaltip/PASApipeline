@@ -112,9 +112,20 @@ main: {
     }
 
     # Determine TransDecoder directory for accessing util scripts
+    # Handle both direct paths and symlinks (conda package uses symlinks)
     my $transdecoder_dir;
-    if ($transdecoder_longorf =~ m{(.+)/TransDecoder\.LongOrfs$}) {
-        $transdecoder_dir = $1;
+    if ($transdecoder_longorf) {
+        # Resolve symlinks to get the actual file location
+        my $real_path = `readlink -f $transdecoder_longorf 2>/dev/null`;
+        chomp($real_path);
+        if ($real_path && -x $real_path && $real_path =~ m{(.+)/TransDecoder\.LongOrfs$}) {
+            $transdecoder_dir = $1;
+        } elsif ($transdecoder_longorf =~ m{(.+)/TransDecoder\.LongOrfs$}) {
+            $transdecoder_dir = $1;
+        } else {
+            # Fallback to bundled location
+            $transdecoder_dir = "$FindBin::Bin/../pasa-plugins/transdecoder";
+        }
     } else {
         # Fallback to bundled location
         $transdecoder_dir = "$FindBin::Bin/../pasa-plugins/transdecoder";
