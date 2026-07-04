@@ -111,33 +111,32 @@ main: {
         die "FATAL: TransDecoder.Predict not found in PATH or pasa-plugins directory\n";
     }
 
-    # Determine TransDecoder directory for accessing util scripts
-    # Handle both direct paths and symlinks (conda package uses symlinks)
-    my $transdecoder_dir;
+    # Determine TransDecoder util script directory
+    # Util scripts are always in the same dir as the main script (conda)
+    # or in a sibling util/ dir (bundled)
+    my $transdecoder_util_dir;
     if ($transdecoder_longorf) {
-        # Resolve symlinks to get the actual file location
+        # Get the directory containing the TransDecoder script
         my $real_path = `readlink -f $transdecoder_longorf 2>/dev/null`;
         chomp($real_path);
 
-        # Extract directory, handling case where util scripts are in util/ subdir
-        if ($real_path && -x $real_path) {
-            if ($real_path =~ m{(.+)/util/TransDecoder\.LongOrfs$}) {
-                # conda package: scripts are in opt/transdecoder/util/
-                $transdecoder_dir = $1;
-            } elsif ($real_path =~ m{(.+)/TransDecoder\.LongOrfs$}) {
-                # bundled or simple path
-                $transdecoder_dir = $1;
+        if ($real_path && $real_path =~ m{^(.+)/[^/]+$}) {
+            my $script_dir = $1;
+            # Check if we're already in a util/ directory (conda case)
+            if ($script_dir =~ m{/util$}) {
+                # Conda: scripts are in util/, util scripts are in the same dir
+                $transdecoder_util_dir = $script_dir;
             } else {
-                # Fallback to bundled location
-                $transdecoder_dir = "$FindBin::Bin/../pasa-plugins/transdecoder";
+                # Bundled: scripts are in transdecoder/, util scripts in util/ subdir
+                $transdecoder_util_dir = "$script_dir/util";
             }
         } else {
-            # Fallback to bundled location
-            $transdecoder_dir = "$FindBin::Bin/../pasa-plugins/transdecoder";
+            # Fallback to bundled util location
+            $transdecoder_util_dir = "$FindBin::Bin/../pasa-plugins/transdecoder/util";
         }
     } else {
-        # Fallback to bundled location
-        $transdecoder_dir = "$FindBin::Bin/../pasa-plugins/transdecoder";
+        # Fallback to bundled util location
+        $transdecoder_util_dir = "$FindBin::Bin/../pasa-plugins/transdecoder/util";
     }
 
     ## Run TransDecoder:
@@ -179,11 +178,11 @@ main: {
     
     my $best_candidates_gff3_file = "$pasa_transcripts_fasta_file.transdecoder.gff3";
     
-    $cmd = "$transdecoder_dir/util/cdna_alignment_orf_to_genome_orf.pl $pasa_transcripts_fasta_file.transdecoder.gff3 $pasa_transcripts_gff3_file $pasa_transcripts_fasta_file > $pasa_transcripts_fasta_file.transdecoder.genome.gff3";
+    $cmd = "$transdecoder_util_dir/cdna_alignment_orf_to_genome_orf.pl $pasa_transcripts_fasta_file.transdecoder.gff3 $pasa_transcripts_gff3_file $pasa_transcripts_fasta_file > $pasa_transcripts_fasta_file.transdecoder.genome.gff3";
     &process_cmd($cmd);
 
 
-    $cmd = "$transdecoder_dir/util/gff3_file_to_bed.pl $pasa_transcripts_fasta_file.transdecoder.genome.gff3 > $pasa_transcripts_fasta_file.transdecoder.genome.bed";
+    $cmd = "$transdecoder_util_dir/gff3_file_to_bed.pl $pasa_transcripts_fasta_file.transdecoder.genome.gff3 > $pasa_transcripts_fasta_file.transdecoder.genome.bed";
     &process_cmd($cmd);
     
 
