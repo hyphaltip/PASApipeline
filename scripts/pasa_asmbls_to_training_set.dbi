@@ -74,13 +74,54 @@ unless ($pasa_transcripts_fasta_file && $pasa_transcripts_gff3_file) {
 }
 
 
+## Helper function to find TransDecoder in PATH or pasa-plugins
+sub find_transdecoder_tool {
+    my ($tool_name) = @_;
+
+    # First try PATH
+    my $path_tool = `which $tool_name 2>/dev/null`;
+    chomp($path_tool);
+    if ($path_tool && -x $path_tool) {
+        print STDERR "[TransDecoder] Found $tool_name in PATH: $path_tool\n" if $verbose;
+        return $path_tool;
+    }
+
+    # Fall back to bundled pasa-plugins
+    my $plugin_tool = "$FindBin::Bin/../pasa-plugins/transdecoder/$tool_name";
+    if (-x $plugin_tool) {
+        print STDERR "[TransDecoder] Found $tool_name in pasa-plugins: $plugin_tool\n" if $verbose;
+        return $plugin_tool;
+    }
+
+    return undef;
+}
+
+
 main: {
 
 
+    ## Find TransDecoder: check PATH first, then bundled location
+    my $transdecoder_longorf = &find_transdecoder_tool("TransDecoder.LongOrfs");
+    my $transdecoder_predict = &find_transdecoder_tool("TransDecoder.Predict");
+
+    unless ($transdecoder_longorf && -x $transdecoder_longorf) {
+        die "FATAL: TransDecoder.LongOrfs not found in PATH or pasa-plugins directory\n";
+    }
+    unless ($transdecoder_predict && -x $transdecoder_predict) {
+        die "FATAL: TransDecoder.Predict not found in PATH or pasa-plugins directory\n";
+    }
+
+    # Determine TransDecoder directory for accessing util scripts
+    my $transdecoder_dir;
+    if ($transdecoder_longorf =~ m{(.+)/TransDecoder\.LongOrfs$}) {
+        $transdecoder_dir = $1;
+    } else {
+        # Fallback to bundled location
+        $transdecoder_dir = "$FindBin::Bin/../pasa-plugins/transdecoder";
+    }
+
     ## Run TransDecoder:
-    
-    my $transdecoder_dir = "$FindBin::Bin/../pasa-plugins/transdecoder";
-        
+
     my $transdecoder_params = "-t $pasa_transcripts_fasta_file ";
         
     if ($genetic_code) {
@@ -95,12 +136,12 @@ main: {
     }
     
 
-    my $cmd = "$transdecoder_dir/TransDecoder.LongOrfs $transdecoder_params";
+    my $cmd = "$transdecoder_longorf $transdecoder_params";
 
     if ($strand_specific_flag) {
         $cmd .= " -S ";
     }
-    
+
     &process_cmd($cmd);
 
 
@@ -108,8 +149,8 @@ main: {
     if ($min_prot_length) {
         $transdecoder_params .= " -m $min_prot_length ";
     }
-    
-    $cmd = "$transdecoder_dir/TransDecoder.Predict $transdecoder_params";
+
+    $cmd = "$transdecoder_predict $transdecoder_params";
     &process_cmd($cmd);
 
     

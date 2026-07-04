@@ -158,6 +158,14 @@ if [ -d "${PASA_ROOT}/scripts" ]; then
     cp -r "${PASA_ROOT}/scripts" "${SRC_DIR}/" || true
 fi
 
+# Copy pasa-plugins directory (includes transdecoder and other bundled tools)
+if [ -d "${PASA_ROOT}/pasa-plugins" ]; then
+    cp -r "${PASA_ROOT}/pasa-plugins" "${SRC_DIR}/" || true
+    echo "[PASA install] Installed pasa-plugins to ${SRC_DIR}/pasa-plugins"
+else
+    echo "[PASA install] WARNING: pasa-plugins directory not found at ${PASA_ROOT}/pasa-plugins" >&2
+fi
+
 # Copy misc_utilities (required for minimap2 and other alignment processing)
 if [ -d "${PASA_ROOT}/misc_utilities" ]; then
     cp -r "${PASA_ROOT}/misc_utilities" "${SRC_DIR}/" || true
