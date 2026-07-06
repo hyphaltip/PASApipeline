@@ -37,8 +37,14 @@ PASA_ROOT="$(dirname "${SCRIPT_DIR}")"
 BIN_DIR="${INSTALL_PREFIX}/bin"
 SRC_DIR="${INSTALL_PREFIX}/src"
 
-# Check if build is needed (exit early if all binaries already exist)
-if [ -x "${BIN_DIR}/pasa_rust" ] && [ -x "${BIN_DIR}/slclust_rust" ] && [ -x "${SRC_DIR}/Launch_PASA_pipeline.pl" ]; then
+# Check if build is needed (exit early only if a fully-correct install exists).
+# Requires all four rust binaries under the names PASA's PerlLib probes for
+# (cdbyank_rust / faidx_rust, NOT the doubled cdbyank_rust_rust), the launcher,
+# and the src/bin -> ../bin symlink. If any is missing, fall through and rebuild
+# so an older/misnamed install gets repaired in place.
+if [ -x "${BIN_DIR}/pasa_rust" ] && [ -x "${BIN_DIR}/slclust_rust" ] \
+    && [ -x "${BIN_DIR}/cdbyank_rust" ] && [ -x "${BIN_DIR}/faidx_rust" ] \
+    && [ -x "${SRC_DIR}/Launch_PASA_pipeline.pl" ] && [ -e "${SRC_DIR}/bin" ]; then
     echo "[PASA install] Already built at ${INSTALL_PREFIX}"
     exit 0
 fi
@@ -56,20 +62,35 @@ if ! (cd "${PASA_ROOT}/pasa_rust" && cargo build --release); then
     BUILD_ERRORS=$((BUILD_ERRORS + 1))
 fi
 
-# Copy Rust binaries
+# Copy Rust binaries.
+# Map each cargo target (release/<src>) to the exact name PASA's PerlLib probes
+# for on $PATH -- do NOT blindly append "_rust", because two cargo targets are
+# already named with a _rust suffix. The consumers are:
+#   PASA_alignment_assembler.pm -> `which pasa_rust`
+#   SingleLinkageClusterer.pm    -> _which("slclust_rust")
+#   CdbTools.pm                  -> _which('cdbyank_rust'), _which('faidx_rust')
+# Appending "_rust" to cdbyank_rust/faidx_rust yields cdbyank_rust_rust /
+# faidx_rust_rust, which those modules never look for, so PASA silently falls
+# back to the C++/non-rust path. Use explicit src:dst pairs instead.
 echo "[PASA install] Installing Rust binaries..."
 RUST_BINS=(
-    pasa
-    slclust
-    cdbyank_rust
-    faidx_rust
+    "pasa:pasa_rust"
+    "slclust:slclust_rust"
+    "cdbyank_rust:cdbyank_rust"
+    "faidx_rust:faidx_rust"
 )
-for bin in "${RUST_BINS[@]}"; do
-    SRC_BIN="${PASA_ROOT}/pasa_rust/target/release/${bin}"
+for entry in "${RUST_BINS[@]}"; do
+    IFS=: read -r src_name dst_name <<< "${entry}"
+    SRC_BIN="${PASA_ROOT}/pasa_rust/target/release/${src_name}"
     if [ -x "${SRC_BIN}" ]; then
-        cp "${SRC_BIN}" "${BIN_DIR}/${bin}_rust" || true
+        cp "${SRC_BIN}" "${BIN_DIR}/${dst_name}" || true
+        # Remove any double-suffixed leftover from older installs so PASA's
+        # PATH probe cannot pick up a stale/misnamed copy.
+        if [ "${dst_name}" != "${src_name}_rust" ]; then
+            rm -f "${BIN_DIR}/${src_name}_rust"
+        fi
     else
-        echo "[PASA install] WARNING: Rust binary not found: ${bin}" >&2
+        echo "[PASA install] WARNING: Rust binary not found: ${src_name}" >&2
     fi
 done
 
@@ -172,6 +193,18 @@ if [ -d "${PASA_ROOT}/misc_utilities" ]; then
     echo "[PASA install] Installed misc_utilities to ${SRC_DIR}/misc_utilities"
 else
     echo "[PASA install] WARNING: misc_utilities directory not found at ${PASA_ROOT}/misc_utilities" >&2
+fi
+
+# Make $SRC_DIR a self-contained PASAHOME. Launch_PASA_pipeline.pl runs
+# `$ENV{PATH} = "$FindBin::Bin/bin:$ENV{PATH}"`, i.e. it expects the compiled
+# tools under $PASAHOME/bin, but this installer keeps them in the sibling
+# $INSTALL_PREFIX/bin. Symlink src/bin -> ../bin so $PASAHOME/bin resolves to the
+# rust-enabled binaries whether or not $INSTALL_PREFIX/bin is on PATH. This makes
+# `export PASAHOME=$INSTALL_PREFIX/src` work standalone, without relying on any
+# downstream wrapper to create the link.
+if [ ! -e "${SRC_DIR}/bin" ]; then
+    ln -s ../bin "${SRC_DIR}/bin"
+    echo "[PASA install] Linked ${SRC_DIR}/bin -> ../bin (PASAHOME=${SRC_DIR})"
 fi
 
 # Setup TransDecoder for PASA
