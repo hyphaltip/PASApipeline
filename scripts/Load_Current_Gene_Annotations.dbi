@@ -70,6 +70,13 @@ $ENV{UTILDIR} = $ENV{PASAHOME} . "/scripts/";
 
 my $dbproc = &DB_connect::connect_to_db($mysql_server,$MYSQLdb,$mysql_rw_user,$mysql_rw_password);
 
+## One commit per isoform (AutoCommit's default) means one fsync-backed commit
+## per gene isoform for the whole genome. Batch into transactions, mirroring
+## the pattern already used in populate_alignments_via_btab.dbi.
+$dbproc->{dbh}->{AutoCommit} = 0;
+my $BATCH_COMMIT_SIZE = 1000;
+my $batch_counter = 0;
+
 
 my $annot_version;
 my $cmd = "$ENV{PASAHOME}/scripts/Annotation_store_preloader.dbi -c $configfile";
@@ -150,9 +157,15 @@ while (my $seqobj = $fasta_reader->next() ) {
             
             my $query = "insert into annotation_store (gene_id, model_id, annotdb_asmbl_id, lend, rend, orient, annotation_version, gene_obj) values (?,?,?,?,?,?,?,?)";
             &DB_connect::RunMod($dbproc, $query, $gene_id, $model_id, $asmbl_id, $lend, $rend, $orient, $annot_version, $blob);
+            $batch_counter++;
+            if ($batch_counter >= $BATCH_COMMIT_SIZE) {
+                $dbproc->{dbh}->commit();
+                $batch_counter = 0;
+            }
         }
     }
 }
+$dbproc->{dbh}->commit() if $batch_counter > 0;
 
 print "Finished.\n\n";
 $dbproc->disconnect;
