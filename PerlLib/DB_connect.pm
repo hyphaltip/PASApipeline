@@ -33,6 +33,11 @@ our $SQLITE_BUSY_TIMEOUT_MS = 30000;
 our $SQLITE_BUSY_MAX_RETRIES = 5;
 my $SQLITE_BUSY_ERRSTR_RE = qr/database is locked|SQLITE_BUSY/i;
 
+## SQLite page cache size, in KB (negative value = KB rather than pages, per
+## SQLite's own PRAGMA cache_size convention). 64MB keeps more hot pages
+## (cluster/align_link lookups) resident instead of round-tripping to disk.
+our $SQLITE_CACHE_SIZE_KB = 64000;
+
 ############### DATABASE CONNECTIVITY ################################
 ####
 
@@ -91,6 +96,7 @@ sub connect_to_db {
         $dbh->do("PRAGMA busy_timeout = $SQLITE_BUSY_TIMEOUT_MS");
         $dbh->do("PRAGMA journal_mode = WAL");
         $dbh->do("PRAGMA synchronous = NORMAL"); # safe in WAL mode; do NOT use OFF
+        $dbh->do("PRAGMA cache_size = -$SQLITE_CACHE_SIZE_KB"); # negative = KB, not pages
     }
 
 
