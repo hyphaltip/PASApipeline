@@ -22,6 +22,17 @@ my $QUERYFAIL;
 
 my $CONNECTED_FLAG = 0; # set to 1 on first db connection. Mostly for logging info.
 
+## How long (ms) SQLite itself will block-and-retry inside the driver before
+## raising SQLITE_BUSY (see connect_to_db()'s "PRAGMA busy_timeout").
+our $SQLITE_BUSY_TIMEOUT_MS = 30000;
+
+## Backstop for the (rare) case a write is still contending after busy_timeout
+## expires: do_sql_2D/RunMod retry up to this many times with a short backoff
+## sleep between attempts, mirroring the existing mysql "server has gone away"
+## retry pattern below.
+our $SQLITE_BUSY_MAX_RETRIES = 5;
+my $SQLITE_BUSY_ERRSTR_RE = qr/database is locked|SQLITE_BUSY/i;
+
 ############### DATABASE CONNECTIVITY ################################
 ####
 
@@ -70,9 +81,19 @@ sub connect_to_db {
         croak "Cannot connect to $db: $DBI::errstr";
     }
     $dbh->{RaiseError} = 1; #turn on raise error.  Must use exception handling now.
-    
 
-    
+    if ($dbh->{Driver}->{Name} eq 'SQLite') {
+        ## Concurrent threads/processes writing to one SQLite file otherwise hit an
+        ## immediate "database is locked" (SQLITE_BUSY) exception instead of waiting
+        ## for the lock -- busy_timeout makes SQLite retry internally for up to
+        ## $SQLITE_BUSY_TIMEOUT_MS before giving up, and WAL mode lets readers proceed
+        ## concurrently with a writer rather than blocking on every write.
+        $dbh->do("PRAGMA busy_timeout = $SQLITE_BUSY_TIMEOUT_MS");
+        $dbh->do("PRAGMA journal_mode = WAL");
+        $dbh->do("PRAGMA synchronous = NORMAL"); # safe in WAL mode; do NOT use OFF
+    }
+
+
     ## add attributes so can reconnect later in case mysql server goes away.
     
     my $dbproc = new DB_connect(); ## temporary fix to deal with lost connections
@@ -163,8 +184,9 @@ sub do_sql_2D {
         print "Cannot prepare statement: $DBI::errstr\nQUERY: $query\tVALUES: @values\n";
         $QUERYFAIL = 1;
     } else {
-        
-        # Keep trying to query thru deadlocks:
+
+        # Keep trying to query thru deadlocks (mysql) and lock contention (SQLite):
+        my $sqlite_busy_attempts = 0;
         do {
             $QUERYFAIL = 0; #initialize
             eval {
@@ -175,20 +197,45 @@ sub do_sql_2D {
             };
             ## exception handling code:
             if ($@) {
-                
+
                 ## check for mysql gone away:
                 if ($DBI::errstr =~ /server has gone away|Lost connection/) {
                     ## reestablish connection and try again:
                     $dbproc = &reconnect_to_server($dbproc);
                     return (&do_sql_2D($dbproc, $query, @values));
                 }
+                elsif ($DBI::errstr =~ $SQLITE_BUSY_ERRSTR_RE) {
+                    ## busy_timeout (see connect_to_db) already makes SQLite block
+                    ## internally before raising; if we still hit SQLITE_BUSY, the
+                    ## lock was held longer than that -- back off and retry a bounded
+                    ## number of times rather than failing the whole run immediately.
+                    $sqlite_busy_attempts++;
+                    if ($sqlite_busy_attempts <= $SQLITE_BUSY_MAX_RETRIES) {
+                        my $backoff_secs = $sqlite_busy_attempts; # 1s, 2s, 3s, ...
+                        print STDERR "-SQLite busy (attempt $sqlite_busy_attempts/"
+                            . "$SQLITE_BUSY_MAX_RETRIES), retrying in ${backoff_secs}s: "
+                            . "<$query>\n";
+                        sleep($backoff_secs);
+                    }
+                    else {
+                        print STDERR "\n\n====\nFailed query after $SQLITE_BUSY_MAX_RETRIES "
+                            . "SQLite busy retries: <$query>\tvalues: @values\n"
+                            . "Errors: $DBI::errstr\n====\n";
+                    }
+                    $QUERYFAIL = 1; # forces another pass through the do{} loop below,
+                                    # or (once attempts exhausted) the while-condition
+                                    # below stops looping and the final confess fires.
+                }
                 else {
                     print STDERR "\n\n====\nFailed query: <$query>\tvalues: @values\nErrors: $DBI::errstr\n====\n";
                     $QUERYFAIL = 1;
                 }
             }
-            
-        } while ($statementHandle->errstr() =~ /deadlock/);
+
+        } while ($statementHandle->errstr()
+                  && ( $statementHandle->errstr() =~ /deadlock/
+                       || ( $statementHandle->errstr() =~ $SQLITE_BUSY_ERRSTR_RE
+                            && $sqlite_busy_attempts <= $SQLITE_BUSY_MAX_RETRIES ) ) );
         #release the statement handle resources
         $statementHandle->finish;
     }
@@ -206,15 +253,30 @@ sub RunMod {
     if($::DEBUG) {
         return;
     }
-    eval {
-        my $sth = $dbproc->{dbh}->prepare_cached($query);
-        $sth->execute(@values);
-        $sth->finish;
-    };
-    if ($@) {
+
+    my $sqlite_busy_attempts = 0;
+    while (1) {
+        eval {
+            my $sth = $dbproc->{dbh}->prepare_cached($query);
+            $sth->execute(@values);
+            $sth->finish;
+        };
+        last unless $@;
+
         if ($DBI::errstr =~ /server has gone away|Lost connection/) {
             &reconnect_to_server($dbproc);
             return (&RunMod($dbproc, $query, @values));
+        }
+        elsif ($DBI::errstr =~ $SQLITE_BUSY_ERRSTR_RE
+               && $sqlite_busy_attempts < $SQLITE_BUSY_MAX_RETRIES) {
+            ## see do_sql_2D() for rationale (busy_timeout already retried
+            ## internally; this is the bounded backstop for longer-held locks).
+            $sqlite_busy_attempts++;
+            my $backoff_secs = $sqlite_busy_attempts;
+            print STDERR "-SQLite busy (attempt $sqlite_busy_attempts/"
+                . "$SQLITE_BUSY_MAX_RETRIES), retrying in ${backoff_secs}s: <$query>\n";
+            sleep($backoff_secs);
+            # loop and retry
         }
         else {
             confess "failed query: <$query>\tvalues: @values\nErrors: $DBI::errstr\n";
