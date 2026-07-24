@@ -228,17 +228,31 @@ foreach my $result (@results) {
             my @assemblies = @$assembly_set;
             my @flcdna_assemblies; #store and process only those containing fl-cdnas.
             my @acc_listing;
+
+            ## Batch the asmbl_link lookup for this whole assembly_set instead of
+            ## issuing one "select cdna_acc from asmbl_link where asmbl_acc = ?"
+            ## query per assembly below (was an N+1 pattern -- one query per
+            ## assembly, across every assembly_set, across every cluster, across
+            ## the whole genome).
+            my %asmbl_acc_to_composite_accs;
+            if (@assemblies) {
+                my @asmbl_accs = map { $_->get_acc() } @assemblies;
+                my $placeholders = join(",", ("?") x scalar(@asmbl_accs));
+                my $batch_query = "select asmbl_acc, cdna_acc from asmbl_link where asmbl_acc in ($placeholders)";
+                my @batch_results = &DB_connect::do_sql_2D($dbproc, $batch_query, @asmbl_accs);
+                foreach my $result_ref (@batch_results) {
+                    my ($asmbl_acc, $cdna_acc) = @$result_ref;
+                    push (@{$asmbl_acc_to_composite_accs{$asmbl_acc}}, $cdna_acc);
+                }
+            }
+
             foreach my $assembly (@assemblies) {
                 my $cdna_acc = $assembly->get_acc();
                 push (@acc_listing, $cdna_acc);
-                ## get the list of composite cdnas:
-                my @composite_accs;
-                my $query = "select cdna_acc from asmbl_link where asmbl_acc = ?";
-                my @results = &DB_connect::do_sql_2D($dbproc, $query, $cdna_acc);
+                ## get the list of composite cdnas (from the batch lookup above):
+                my @composite_accs = @{ $asmbl_acc_to_composite_accs{$cdna_acc} || [] };
                 my $is_fl_containing = 0;
-                foreach my $result_ref (@results) {
-                    my $acc = $result_ref->[0];
-                    push (@composite_accs, $acc);
+                foreach my $acc (@composite_accs) {
                     if ($FLCDNA{$acc}) {
                         $is_fl_containing = 1;
                     }
