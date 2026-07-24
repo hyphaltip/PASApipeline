@@ -15,7 +15,9 @@ pasa-plugins/cdbtools/tgi_cl/gcl/GReadBuf
 pasa-plugins/cdbtools/tgi_cl/gcl/GString
 pasa-plugins/cdbtools/tgi_cl/gcl/gcdb
 
-# PASA benchmark scratch output (benchmarks/run_bench.sh regenerates these
-# fresh from sample_data/ on every run -- disposable, not source)
+# PASA benchmark scratch output (benchmarks/run_bench.sh / run_bench_mysql.sh
+# regenerate these fresh from sample_data/ on every run -- disposable, not source)
 /bench_sqlite_*/
 /bench_sqlite_*_launcher.log
+/bench_mysql_*/
+/bench_mysql_*_launcher.log
