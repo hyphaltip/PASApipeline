@@ -109,11 +109,9 @@ my ($dbproc) = &connect_to_db($MYSQLserver,$MYSQLdb,$user,$password);
 
 
 
-if ($ENV{DBI_DRIVER} eq 'SQLite') {
-    # turn off multi-threading... not working w/ sqlite here, only mysql
-    print STDERR "-in SQLite mode, disabling multithreading\n";
-    $NUM_THREADS = 1;
-}
+## Threading against a shared SQLite file used to hit "database is locked"
+## before DB_connect.pm's busy_timeout/WAL/retry handling existed (added
+## alongside this change); no longer forcing single-threaded under SQLite.
 
 
 &init_alt_splice_tables(); # purge existing data in case of rerun.

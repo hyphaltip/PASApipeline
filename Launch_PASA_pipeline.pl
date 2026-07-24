@@ -821,7 +821,7 @@ if ($RUN_PIPELINE) {
 			  
 			  { 
 				  prog => "$UTILDIR/assign_clusters_by_stringent_alignment_overlap.dbi",
-				  params => "-M $database -L $STRINGENT_ALIGNMENT_OVERLAP", # require all alignments are valid here.
+				  params => "-M $database -L $STRINGENT_ALIGNMENT_OVERLAP -T $CPU", # require all alignments are valid here.
 				  input => undef,
 				  output => "$PASA_LOG_DIR/cluster_reassignment_by_stringent_overlap.out",
                   chkpt => "cluster_reassign_stringent_overlap.ok",
@@ -843,7 +843,7 @@ if ($RUN_PIPELINE) {
 		push (@cmds, 
 			  { 
 				  prog => "$UTILDIR/assign_clusters_by_gene_intergene_overlap.dbi",
-				  params => "-M '$database' -G $ANNOTS_FILE -L $GENE_OVERLAP", # require all alignments are valid here.
+				  params => "-M '$database' -G $ANNOTS_FILE -L $GENE_OVERLAP -T $CPU", # require all alignments are valid here.
 				  input => undef,
 				  output => "$PASA_LOG_DIR/alignment_cluster_reassignment.out",
                   chkpt => "alignment_cluster_reassignment.ok",
