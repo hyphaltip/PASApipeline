@@ -10,10 +10,12 @@ use Getopt::Std;
 use SingleLinkageClusterer;
 use BinaryFeatureSearch;
 use Overlap_piler;
+use threads;
+use Thread_helper;
 
-use vars qw ($opt_V $opt_M $opt_d $opt_h $opt_v $opt_L $opt_G $opt_X);
+use vars qw ($opt_V $opt_M $opt_d $opt_h $opt_v $opt_L $opt_G $opt_X $opt_T);
 
-&getopts ('M:dhvV:L:G:X');
+&getopts ('M:dhvV:L:G:XT:');
 
 
 $|=1;
@@ -64,6 +66,8 @@ if ($opt_L) {
 	$min_percent_shorter_length = $opt_L;
 }
 
+my $NUM_THREADS = $opt_T || 2;
+
 my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password);
 
 
@@ -108,8 +112,32 @@ print STDERR "// retrieving transcript coordinate data.\n";
 #}
 
 ## Perform new overlap analysis, populate/update db.
+$dbproc->disconnect(); # each thread below opens its own connection
+
+## STDOUT here (Cluster:/Intergenic pile: lines) is pure log output, not
+## consumed as data by any downstream command (confirmed via
+## Launch_PASA_pipeline.pl -- same reasoning as the sibling
+## assign_clusters_by_stringent_alignment_overlap.dbi), so interleaved
+## output from concurrent threads is harmless.
+my $thread_helper = new Thread_helper($NUM_THREADS);
 foreach my $asmbl_id_info (keys %asmbl_id_to_cdna_accs) {
-    
+    my $thread = threads->create('process_asmbl_id_info', $asmbl_id_info);
+    $thread_helper->add_thread($thread);
+}
+$thread_helper->wait_for_all_threads_to_complete();
+my @failed_threads = $thread_helper->get_failed_threads();
+if (@failed_threads) {
+    die "Error, " . scalar(@failed_threads) . " assign_clusters threads failed.\n";
+}
+exit(0);
+
+
+####
+sub process_asmbl_id_info {
+    my ($asmbl_id_info) = @_;
+
+    my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password); # own connection per thread
+
 	my ($asmbl_id, $spliced_orient) = split(/;/, $asmbl_id_info);
 
     my @transcripts;
@@ -121,9 +149,9 @@ foreach my $asmbl_id_info (keys %asmbl_id_to_cdna_accs) {
 	my %acc_to_struct;
 
     foreach my $cdna_acc (@cdna_accs) {
-        my $align_id = &get_align_id($cdna_acc);
+        my $align_id = &get_align_id($dbproc, $cdna_acc);
         if ($align_id) {
-            my ($lend, $rend) = sort {$a<=>$b} &get_alignment_span($align_id);
+            my ($lend, $rend) = sort {$a<=>$b} &get_alignment_span($dbproc, $align_id);
 			
 			my $struct = { cdna_acc => $cdna_acc,
 						   acc => $cdna_acc, 
@@ -227,18 +255,17 @@ foreach my $asmbl_id_info (keys %asmbl_id_to_cdna_accs) {
 	my @piled_accs = $overlap_piler->build_clusters();
 
 	foreach my $pile (@piled_accs) {
-		
+
 		print "Intergenic pile: " . join("\t", @$pile) . "\n";
-		
+
 		unless ($MOCK_RUN) {
 			&insert_cluster($dbproc, $asmbl_id, $pile, \%acc_to_struct);
 		}
 	}
+
+    $dbproc->disconnect();
+    return;
 }
-
-
-$dbproc->disconnect;
-exit(0);
 
 
 
@@ -289,18 +316,18 @@ sub insert_cluster {
 
 ####
 sub get_align_id {
-    my $cdna_acc = shift;
+    my ($dbproc, $cdna_acc) = @_;
     my $query = "select align_id from align_link where align_acc = ?";
     if ($require_valid) {
         $query .= " and validate = 1 ";
     }
-    
+
     my $align_id = &very_first_result_sql($dbproc, $query, $cdna_acc);
     return ($align_id);
 }
 
 sub get_alignment_span {
-    my ($align_id) = shift;
+    my ($dbproc, $align_id) = @_;
     my $query = "select lend, rend from alignment where align_id = ?";
     my @results = &do_sql_2D($dbproc, $query, $align_id);
     my @coords;
