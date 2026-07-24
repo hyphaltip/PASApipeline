@@ -25,6 +25,7 @@ my ($opt_c, $opt_C, $opt_r, $opt_R, $opt_A, $opt_g, $opt_t, $opt_f, $opt_T, $opt
 	$ALT_SPLICE, $INVALIDATE_SINGLE_EXON_ESTS, $IMPORT_CUSTOM_ALIGNMENTS_GFF3,
 	$splice_graph_assembler_flag,
     $ALIGNED_IS_TRANSCRIBED_ORIENT,
+    $ascii_illustration_flag,
 	$ANNOTS_FILE, $opt_L, $STRINGENT_ALIGNMENT_OVERLAP, $GENE_OVERLAP,
     $SIM4_CHASER, $genetic_code, $TRANSDECODER, @PRIMARY_ALIGNERS,
     $PASACONF, 
@@ -61,6 +62,7 @@ my $CUFFLINKS_GTF;
               'INVALIDATE_SINGLE_EXON_ESTS' => \$INVALIDATE_SINGLE_EXON_ESTS,
               'IMPORT_CUSTOM_ALIGNMENTS_GFF3=s' => \$IMPORT_CUSTOM_ALIGNMENTS_GFF3,
               'USE_SPLICE_GRAPH_ASSEMBLER' => \$splice_graph_assembler_flag,
+              'ascii_illustration' => \$ascii_illustration_flag,
 			  'MAX_INTRON_LENGTH|I=i' => \$MAX_INTRON_LENGTH,
               'APPLY_SIM4_CHASER' => \$SIM4_CHASER,
               'TRANSDECODER' => \$TRANSDECODER,
@@ -131,6 +133,8 @@ my $usage =  <<_EOH_;
 # --run|-R               flag, run alignment/assembly pipeline.
 # --annot_compare|-A               (see section below; can use with opts -L and --annots)  compare to annotated genes.
 # --ALT_SPLICE     flag, run alternative splicing analysis
+# --ascii_illustration     flag, write out the *.pasa_alignment_assembly_building.ascii_illustrations.out
+#                          debug log of per-cluster ASCII alignment/assembly illustrations (default: off, not written)
 
 # // input files
 # --genome|-g * <filename>  genome sequence FASTA file (should contain annot db asmbl_id as header accession.)
@@ -235,6 +239,13 @@ if ($splice_graph_assembler_flag) {
 }
 else {
     $splice_graph_assembler_flag = "";
+}
+
+if ($ascii_illustration_flag) {
+    $ascii_illustration_flag = "--ascii_illustration";
+}
+else {
+    $ascii_illustration_flag = "";
 }
 
 
@@ -883,7 +894,7 @@ if ($RUN_PIPELINE) {
 		  # build the assemblies:
 		  {
 			  prog => "$UTILDIR/assemble_clusters.dbi",
-			  params => "-G $genome_db  -M '$database' $splice_graph_assembler_flag -T $CPU ",
+			  params => "-G $genome_db  -M '$database' $splice_graph_assembler_flag $ascii_illustration_flag -T $CPU ",
 			  input => undef,
 			  output => "$DBname.pasa_alignment_assembly_building.ascii_illustrations.out",
               chkpt => "assemble_clusters.ok",

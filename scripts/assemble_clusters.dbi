@@ -24,6 +24,10 @@ use vars qw ($opt_h $opt_D $opt_X $opt_p $opt_d $DEBUG $opt_S $opt_M $opt_G $opt
 
 $ENV{PATH} = "$FindBin::Bin/../bin:$ENV{PATH}";  #so can find the 'pasa' binary needed for assembly.
 
+## Getopt::Std only handles single-char opts; pull the long-form flag out of @ARGV before calling getopts.
+my $opt_ascii_illustration = 0;
+@ARGV = grep { $_ eq '--ascii_illustration' ? do { $opt_ascii_illustration = 1; 0 } : 1 } @ARGV;
+
 &getopts ('hD:dS:M:G:vXT:n:');
 
 
@@ -51,6 +55,8 @@ assembly_db_loader.dbi
 # -T <int>   number of threads (default: 2)
 #
 # -n <int>   maximum number of alignments to assemble per cluster (default: $max_num_aligns_assemble_per_cluster)
+#
+# --ascii_illustration   flag, write the per-cluster ASCII alignment/assembly illustrations to STDOUT (default: off, not written)
 #
 ###################### Process Args and Options #####################
 
@@ -169,8 +175,8 @@ sub assemble_transcripts_on_scaffold {
     my @cluster_ids = Ath1_cdnas::get_cluster_ids_via_annotdb_asmbl_id($dbproc, $asmbl_id);
     
     foreach my $cluster_id (@cluster_ids) {
-        
-        print "\n\n// cluster: $cluster_id\n";
+
+        print "\n\n// cluster: $cluster_id\n" if $opt_ascii_illustration;
         my $assembler;
         if ($USE_SPLICE_GRAPH_ASSEMBLER) {
             $assembler = new CDNA::Splice_graph_assembler();
@@ -201,34 +207,36 @@ sub assemble_transcripts_on_scaffold {
         
         foreach my $result (@results) {
             my ($cdna_acc, $align_id, $align_lend, $score) = @$result;
-            print "cdna_acc: $cdna_acc\talign_id: $align_id\n";
-            
+            print "cdna_acc: $cdna_acc\talign_id: $align_id\n" if $opt_ascii_illustration;
+
             my $alignment_obj = $align_id_to_obj{$align_id};
             $alignment_obj->set_acc($cdna_acc);
             my $aligned_orient = $alignment_obj->get_orientation();
             my $spliced_orient = $alignment_obj->get_spliced_orientation();
-            print "$cdna_acc (a$aligned_orient, s$spliced_orient)\n";
+            print "$cdna_acc (a$aligned_orient, s$spliced_orient)\n" if $opt_ascii_illustration;
             unless ($aligned_orient =~ /[\+\-]/) {
                 die "Error, $cdna_acc lacs aligned orient!";
             }
-            
-            print $alignment_obj->toToken() . "\n";
+
+            print $alignment_obj->toToken() . "\n" if $opt_ascii_illustration;
             push (@alignments, $alignment_obj);
         }
-        
+
         if (@alignments) {
             $assembler->assemble_alignments(@alignments);
-            print $assembler->toAlignIllustration(150);
-            print "\n\n\n";
+            if ($opt_ascii_illustration) {
+                print $assembler->toAlignIllustration(150);
+                print "\n\n\n";
+            }
             my @assemblies = $assembler->get_assemblies();
             push (@all_assemblies, @assemblies);
             foreach my $assembly (@assemblies) {
                 my $acc = $assembly->get_acc();
-                print "ASSEMBLY: " . $assembly->toToken() . "\t$acc\n";
+                print "ASSEMBLY: " . $assembly->toToken() . "\t$acc\n" if $opt_ascii_illustration;
                 $assembly->{cluster_id} = $cluster_id;
             }
         } else {
-            print "Sorry, no validating cDNA alignments in this cluster.\n";
+            print "Sorry, no validating cDNA alignments in this cluster.\n" if $opt_ascii_illustration;
         }
         
     }
