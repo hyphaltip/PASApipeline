@@ -9,10 +9,12 @@ use DBI;
 use Getopt::Std;
 use SingleLinkageClusterer;
 use Overlap_piler;
+use threads;
+use Thread_helper;
 
-use vars qw ($opt_V $opt_M $opt_p $opt_d $opt_h $opt_v $opt_L);
+use vars qw ($opt_V $opt_M $opt_p $opt_d $opt_h $opt_v $opt_L $opt_T);
 
-&getopts ('M:dhvV:L:');
+&getopts ('M:dhvV:L:T:');
 
 
 $|=1;
@@ -60,6 +62,8 @@ if ($opt_L) {
 	$min_percent_shorter_length = $opt_L;
 }
 
+my $NUM_THREADS = $opt_T || 2;
+
 my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password);
 
 print STDERR "// retrieving valid alignments.\n";
@@ -92,11 +96,34 @@ print STDERR "// retrieving transcript coordinate data.\n";
 
 my $alignment_cluster_number = scalar(keys %asmbl_id_to_cdna_accs);
 print STDERR "Will process $alignment_cluster_number alignment assemblies...\n";
-$dbproc->{dbh}->{AutoCommit} = 0;
-my $progress = 0;
+$dbproc->disconnect(); # each thread below opens its own connection
 
+## STDOUT here (Overlap_cluster_size/Cluster: lines) is pure log output --
+## Launch_PASA_pipeline.pl never wires this script's captured output file in
+## as another command's input (unlike subcluster_builder.dbi, see #7/PR #13),
+## so interleaved output from concurrent threads is harmless; no per-thread
+## output file needed here.
+my $thread_helper = new Thread_helper($NUM_THREADS);
 foreach my $asmbl_id_info (keys %asmbl_id_to_cdna_accs) {
-    
+    my $thread = threads->create('process_asmbl_id_info', $asmbl_id_info);
+    $thread_helper->add_thread($thread);
+}
+$thread_helper->wait_for_all_threads_to_complete();
+my @failed_threads = $thread_helper->get_failed_threads();
+if (@failed_threads) {
+    die "Error, " . scalar(@failed_threads) . " assign_clusters threads failed.\n";
+}
+print STDERR "\nDone!\n";
+exit(0);
+
+
+####
+sub process_asmbl_id_info {
+    my ($asmbl_id_info) = @_;
+
+    my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password); # own connection per thread
+    $dbproc->{dbh}->{AutoCommit} = 0;
+
 	my ($asmbl_id, $spliced_orient) = split(/;/, $asmbl_id_info);
 
     my @transcripts;
@@ -108,10 +135,10 @@ foreach my $asmbl_id_info (keys %asmbl_id_to_cdna_accs) {
 	my %acc_to_struct;
 
     foreach my $cdna_acc (@cdna_accs) {
-        my $align_id = &get_align_id($cdna_acc);
+        my $align_id = &get_align_id($dbproc, $cdna_acc);
         if ($align_id) {
-            my ($lend, $rend) = sort {$a<=>$b} &get_alignment_span($align_id);
-			
+            my ($lend, $rend) = sort {$a<=>$b} &get_alignment_span($dbproc, $align_id);
+
 			my $struct = { cdna_acc => $cdna_acc,
 						   lend => $lend,
 						   rend => $rend,
@@ -235,21 +262,10 @@ foreach my $asmbl_id_info (keys %asmbl_id_to_cdna_accs) {
         }
     }
 
-    $progress++;
-    if ($progress % 50 == 0){
-        print STDERR "Committed $progress/$alignment_cluster_number ...\r";
-        $dbproc->{dbh}->commit;
-    }
-    
-    
+    $dbproc->{dbh}->commit;
+    $dbproc->disconnect();
+    return;
 }
-
-$dbproc->{dbh}->commit;
-print STDERR "\nDone!\n";
-
-
-$dbproc->disconnect;
-exit(0);
 
 
 
@@ -299,18 +315,18 @@ sub insert_cluster {
 
 ####
 sub get_align_id {
-    my $cdna_acc = shift;
+    my ($dbproc, $cdna_acc) = @_;
     my $query = "select align_id from align_link where align_acc = ?";
     if ($require_valid) {
         $query .= " and validate = 1 ";
     }
-    
+
     my $align_id = &very_first_result_sql($dbproc, $query, $cdna_acc);
     return ($align_id);
 }
 
 sub get_alignment_span {
-    my ($align_id) = shift;
+    my ($dbproc, $align_id) = @_;
     my $query = "select lend, rend from alignment where align_id = ?";
     my @results = &do_sql_2D($dbproc, $query, $align_id);
     my @coords;
