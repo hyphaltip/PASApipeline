@@ -16,9 +16,9 @@ use Fasta_retriever;
 use Getopt::Std;
 require "overlapping_nucs.ph";
 
-use vars qw ($opt_h $opt_D $opt_p $opt_d $DEBUG $opt_S $opt_M $opt_G $opt_m $opt_v);
+use vars qw ($opt_h $opt_D $opt_p $opt_d $DEBUG $opt_S $opt_M $opt_G $opt_m $opt_v $opt_R);
 
-&getopts ('hD:dS:M:G:m:v');
+&getopts ('hD:dS:M:G:m:vR:');
 
 my $usage =  <<_EOH_;
 
@@ -30,8 +30,12 @@ Subclusters broken out of clusters to group together potential alt-splice variat
 # -G genomic_sequence fasta file db
 # -m minimum percent overlap for two cDNA sequences to be grouped into the same subcluster
 #    (default: 50)
+# -R <asmbl_id>  restrict processing to a single contig/scaffold (annotdb_asmbl_id).
+#    For use by an external sharding driver dispatching one process per contig
+#    (see sharding/shard_subcluster_builder.sh); equivalent in spirit to
+#    cDNA_annotation_comparer.dbi's --RESTRICT_SINGLE_CONTIG.
 # -d Debug
-# 
+#
 # -h print this option menu and quit
 ###################### Process Args and Options #####################
 
@@ -81,8 +85,17 @@ print $query;
 my @results = &DB_connect::do_sql_2D ($dbproc, $query);
 foreach my $result (@results) {
     my $asmbl_id = $result->[0];
-    print STDERR "\r$asmbl_id";  ## FIXME: add multi-threading here.
-    
+
+    ## In-process threading here was tried and rejected (issue #7): this loop
+    ## calls SingleLinkageClusterer::build_clusters, which forks pasa/slclust
+    ## subprocesses per cluster, and forking from a multi-threaded Perl process
+    ## is more expensive than from a single-threaded one -- benchmarked slower
+    ## at every thread count tried. Use -R plus an external per-contig process
+    ## sharding driver (sharding/shard_subcluster_builder.sh, issue #6) instead.
+    if ($opt_R && $asmbl_id ne $opt_R) { next; }
+
+    print STDERR "\r$asmbl_id";
+
     #my $sequence = &Ath1_cdnas::get_seq_from_fasta($asmbl_id, $genomic_seq_db);
     
     my $sequence = $fasta_retriever->get_seq($asmbl_id);

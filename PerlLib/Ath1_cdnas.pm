@@ -36,6 +36,18 @@ sub get_cluster_ids_via_annotdb_asmbl_id {
 }
 
 
+####
+sub get_all_annotdb_asmbl_ids {
+    my ($dbproc) = @_;
+    my $query = "select distinct annotdb_asmbl_id from clusters order by annotdb_asmbl_id";
+    my @results = &DB_connect::do_sql_2D ($dbproc, $query);
+    my @asmbl_ids;
+    foreach my $result_aref (@results) {
+        push (@asmbl_ids, $result_aref->[0]);
+    }
+    return (@asmbl_ids);
+}
+
 
 ####
 sub create_alignment_obj {

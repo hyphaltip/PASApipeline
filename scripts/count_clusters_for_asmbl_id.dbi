@@ -1,0 +1,69 @@
+#!/usr/bin/env perl
+
+use FindBin;
+use lib ($FindBin::Bin);
+use Pasa_init;
+use Pasa_conf;
+use DB_connect;
+use strict;
+use DBI;
+use Getopt::Std;
+
+our $SEE = 0;
+
+use vars qw ($opt_h $opt_d $DEBUG $opt_M $opt_R);
+
+&getopts ('hdM:R:');
+
+my $usage =  <<_EOH_;
+
+Prints the count of distinct cluster_id values in the clusters table for a
+single contig/scaffold (annotdb_asmbl_id). Used by the sharding driver
+(sharding/shard_subcluster_builder.sh) as a structural completeness check --
+comparing this independent count against the number of "Processing cluster:"
+blocks a per-contig subcluster_builder.dbi -R shard actually emitted, to catch
+truncated/partial shard output that otherwise exited 0.
+
+############################# Options ###############################
+#
+# -M database name
+# -R <asmbl_id>  contig/scaffold to count clusters for
+#
+# -d Debug
+#
+# -h print this option menu and quit
+###################### Process Args and Options #####################
+
+_EOH_
+
+    ;
+
+if ($opt_h) {die $usage;}
+
+my $MYSQLdb = $opt_M or die $usage;
+my $asmbl_id = $opt_R or die $usage;
+my $MYSQLserver = &Pasa_conf::getParam("MYSQLSERVER");
+my $user = &Pasa_conf::getParam("MYSQL_RW_USER");
+my $password = &Pasa_conf::getParam("MYSQL_RW_PASSWORD");
+
+my $DEBUG = $opt_d;
+
+my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password);
+
+## Matches the exact filter subcluster_builder.dbi's own per-contig loop uses
+## (scripts/subcluster_builder.dbi's outer/inner asmbl_id queries) -- only
+## clusters with at least one is_assembly=1 alignment link are ever processed
+## or emitted as a "Processing cluster:" block, so a plain count of all
+## clusters for this asmbl_id (including assembly-less/raw-only clusters)
+## would over-count and produce false completeness-check failures.
+my $query = "select count(distinct c.cluster_id) "
+    . " from clusters c, align_link al, cdna_info ci "
+    . " where c.annotdb_asmbl_id = ? and al.cluster_id = c.cluster_id "
+    . " and al.cdna_info_id = ci.id and ci.is_assembly = 1";
+my @results = &DB_connect::do_sql_2D($dbproc, $query, $asmbl_id);
+my $count = $results[0]->[0] // 0;
+print "$count\n";
+
+$dbproc->disconnect;
+
+exit(0);
