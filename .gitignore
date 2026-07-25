@@ -21,3 +21,9 @@ pasa-plugins/cdbtools/tgi_cl/gcl/gcdb
 /bench_sqlite_*_launcher.log
 /bench_mysql_*/
 /bench_mysql_*_launcher.log
+
+# benchmark scratch (bench_results holds multi-hundred-MB DB copies)
+bench_results/
+logs/
+*.sqlite
+*.sqlite.unverified
