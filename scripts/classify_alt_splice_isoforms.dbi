@@ -16,7 +16,7 @@ use Carp;
 use Data::Dumper;
 use threads;
 use threads::shared;
-use Thread_helper;
+use Thread::Queue;
 
 use vars qw ($opt_M $opt_v $opt_G $opt_d $opt_h $opt_T);
 
@@ -143,7 +143,6 @@ main: {
     foreach my $result_aref (@results) {
         push (@subcluster_ids, $result_aref->[0]);
     }
-    my $thread_helper = new Thread_helper($NUM_THREADS);
     my $outdir = "__tmp_classify_alt_isoforms";
     if (-d $outdir) {
         print STDERR "WARNING: $outdir exists and will be removed in 10 seconds unless you cntrl-c ...";
@@ -152,32 +151,61 @@ main: {
         `rm -rf $outdir`;
     }
     mkdir($outdir) or die "Error, cannot mkdir $outdir";
-    
-    foreach my $id (@subcluster_ids) {
-        my $outfile = $outdir .'/'. $id.'.out';
-        #next if -s $outfile ; # not sure if we want that
-        my $thread = threads->create('process_subcluster', $id,$outfile);
-        $thread_helper->add_thread($thread);
+
+    ## Fixed-size worker pool, rather than one thread per subcluster.
+    ##
+    ## process_subcluster() only shells out to
+    ## classify_alt_splice_isoforms_per_subcluster.dbi, so a thread here does no
+    ## Perl work of its own -- it exists solely to hold a system() call. The
+    ## previous code created one ithread per subcluster (thousands of them), and
+    ## every threads->create clones the entire interpreter, including the
+    ## %pasa_acc_to_gene hash built just above. Measured clone cost scales with
+    ## that pre-spawn state: 2.3 ms for an empty interpreter, 11 ms at 10k hash
+    ## keys, 131 ms at 100k, 725 ms at 500k. Spawning $NUM_THREADS workers once
+    ## and feeding them from a queue pays that cost $NUM_THREADS times total
+    ## instead of once per subcluster.
+    my $queue = Thread::Queue->new();
+    $queue->enqueue(@subcluster_ids);
+    $queue->end();   ## all work is queued up front, so dequeue() returns undef when drained
+
+    my @workers;
+    for (1 .. $NUM_THREADS) {
+        push (@workers, threads->create('subcluster_worker', $queue, $outdir));
     }
 
-    $thread_helper->wait_for_all_threads_to_complete();
-    my @failed_threads = $thread_helper->get_failed_threads();
-    if (@failed_threads) {
-        die "Error, " . scalar(@failed_threads) . " threads failed.\n";
-        exit(1);
-    }
-    # concan all output to one file
-    my @res_files = glob("$outdir/*out");
-    foreach my $file (sort @res_files){
-        open (IN,$file);
-        open (OUT,">alt_splicing_analysis.results.out");
-        while (my $ln=<IN>){
-            print OUT $ln;
+    my $num_failed = 0;
+    foreach my $worker (@workers) {
+        my $worker_failures = $worker->join();
+        if (my $error = $worker->error()) {
+            print STDERR "ERROR, worker thread " . $worker->tid() . " exited with error $error\n";
+            $num_failed++;
         }
-        close (IN);
-        close (OUT);
+        elsif (defined $worker_failures) {
+            $num_failed += $worker_failures;
+        }
     }
-    
+    if ($num_failed) {
+        die "Error, $num_failed subcluster job(s) failed.\n";
+    }
+
+    ## Concatenate the per-subcluster outputs.
+    ##
+    ## NB: the destination is opened ONCE, outside the loop. It used to be
+    ## opened with '>' *inside* the loop, which truncated it on every
+    ## iteration, so alt_splicing_analysis.results.out ended up holding only
+    ## the last subcluster's output rather than all of them.
+    my @res_files = glob("$outdir/*out");
+    open (my $out_fh, '>', "alt_splicing_analysis.results.out")
+        or die "Error, cannot write alt_splicing_analysis.results.out: $!";
+    foreach my $file (sort @res_files) {
+        open (my $in_fh, '<', $file) or die "Error, cannot read $file: $!";
+        while (my $ln = <$in_fh>) {
+            print $out_fh $ln;
+        }
+        close ($in_fh);
+    }
+    close ($out_fh);
+
     my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password); # refresh it per thread
     &summarize_labels($dbproc);
     
@@ -272,7 +300,31 @@ sub get_splice_token {
 }
 
 
-###
+####
+sub subcluster_worker {
+    my ($queue, $outdir) = @_;
+
+    ## Pull subcluster ids until the queue is drained. The queue was end()ed
+    ## before any worker started, so dequeue() returns undef once empty rather
+    ## than blocking forever.
+    my $failures = 0;
+    while (defined(my $subcluster_id = $queue->dequeue())) {
+        my $outfile = $outdir . '/' . $subcluster_id . '.out';
+        eval {
+            &process_subcluster($subcluster_id, $outfile);
+        };
+        if ($@) {
+            print STDERR "ERROR, subcluster $subcluster_id failed: $@";
+            $failures++;
+        }
+    }
+
+    ## Report failures as a count rather than dying, so one bad subcluster does
+    ## not take down a worker that still has queued work to drain.
+    return $failures;
+}
+
+
 sub process_subcluster(){
     my $subcluster_id = shift;
     my $outfile = shift;
