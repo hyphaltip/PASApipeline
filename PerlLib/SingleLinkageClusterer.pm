@@ -15,6 +15,8 @@ package SingleLinkageClusterer;
 
 use strict;
 use warnings;
+use File::Temp qw(tempfile);
+use Pasa_tmpdir;
 
 __run_test() unless caller;
 
@@ -34,16 +36,22 @@ sub _which {
 sub build_clusters {
     my @pairs = @_;
     
-    my $uniq_stamp = "$$." . time() . "." . rand();
-    
-    my $pairfile = "/tmp/$uniq_stamp.pairs";
-    
+    ## Was: hardcoded /tmp with a "$$.<time>.<rand>" name. Two problems on a
+    ## cluster -- /tmp is node-wide, often small, and sometimes tmpfs-backed
+    ## (charging the job's memory), while schedulers provide faster per-job
+    ## node-local scratch; and the name was constructed rather than claimed.
+    ## This function is reached from threads via subcluster_builder.dbi and
+    ## runs once per cluster, so temp churn here is heavy.
+    my $tmpdir = Pasa_tmpdir::get_tmpdir();
+
+    my ($pair_fh, $pairfile) = tempfile("slclust.XXXXXXXXXX", DIR => $tmpdir,
+                                        SUFFIX => ".pairs", UNLINK => 0);
+
     #must do mapping because cluster program doesn't like word chars, just ints.
-    my %map_id_to_feat; 
+    my %map_id_to_feat;
     my %map_feat_to_id;
     my $id = 1;
-    
-    open (PAIRLIST, ">$pairfile") or die "Can't write $pairfile to /tmp";
+
     foreach my $pair (@pairs) {
         my ($a, $b) = @$pair;
         unless ($map_feat_to_id{$a}) {
@@ -57,13 +65,13 @@ sub build_clusters {
             $id++;
         }
         
-        print PAIRLIST "$map_feat_to_id{$a} $map_feat_to_id{$b}\n";
+        print $pair_fh "$map_feat_to_id{$a} $map_feat_to_id{$b}\n";
     }
-    close PAIRLIST;
-    
-    my $clusterfile = "/tmp/$uniq_stamp.clusters";
-    
-    system "touch $clusterfile";
+    close $pair_fh;
+
+    my ($cluster_fh, $clusterfile) = tempfile("slclust.XXXXXXXXXX", DIR => $tmpdir,
+                                              SUFFIX => ".clusters", UNLINK => 0);
+    close $cluster_fh;  ## slclust writes this itself via shell redirection
     unless (-w $clusterfile) { die "Can't write $clusterfile";}
     
     ## Prefer C++ slclust (faster at all tested scales)
@@ -74,18 +82,22 @@ sub build_clusters {
     } elsif ($SLCLUST_RUST && -x $SLCLUST_RUST) {
         $cmd = "$SLCLUST_RUST < $pairfile > $clusterfile";
     } else {
+        ## both temp files already exist by this point; don't strand them
+        unlink ($pairfile, $clusterfile);
         die "ERROR: Neither slclust nor slclust_rust found in PATH";
     }
     
     my $ret = system ($cmd);
     if ($ret) {
+        unlink ($pairfile, $clusterfile);
         die "ERROR: Couldn't run cluster properly via path: $cmd";
     }
-    
+
     my @clusters;
-    open (CLUSTERS, $clusterfile);
-    
-    while (my $line = <CLUSTERS>) {
+    open (my $clusters_fh, '<', $clusterfile)
+        or die "Error, cannot read cluster output $clusterfile: $!";
+
+    while (my $line = <$clusters_fh>) {
         my @elements;
         while ($line =~ /(\d+)\s?/g) {
             push (@elements, $map_id_to_feat{$1});
@@ -95,7 +107,7 @@ sub build_clusters {
         }
     }
     
-    close CLUSTERS;
+    close $clusters_fh;
     
     ## clean up
     unlink ($pairfile, $clusterfile);
