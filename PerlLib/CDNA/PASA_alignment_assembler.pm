@@ -23,6 +23,8 @@ use strict;
 use CDNA::CDNA_alignment;
 use Data::Dumper;
 use Carp;
+use File::Temp qw(tempfile);
+use Pasa_tmpdir;
 
 ## File scoped globals:
 my $DELIMETER = "$;,";
@@ -206,6 +208,33 @@ sub assemble_alignments {
 }
 
 
+=head2 pasa_cpp_assemblies
+
+Hands the incoming alignments to the external C++/Rust C<pasa> binary and parses
+the assemblies back.
+
+B<Temp-file allocation:> this method exchanges data with the child C<pasa>
+process through files in a shared temp directory, so those filenames are the
+only thing isolating one concurrent caller from another. They are allocated with
+C<File::Temp::tempfile>, which creates each file atomically (C<O_EXCL>) and
+retries on collision.
+
+Please do not "optimize" this back into a constructed filename. From the 2015
+initial import until 2026-07 the names were built as C<time() . "-" . rand()>.
+Testing on the funannotate Perl showed that token does in fact differ per
+ithread, so it was not observed to collide -- but constructing a name and then
+opening it assumes exclusivity, whereas C<O_EXCL> verifies it. That distinction
+matters most where a constructed token cannot help at all: a shared or network
+C<$TMPDIR>, where pids repeat across hosts. The same reasoning is why this uses
+atomic creation rather than a UUID, which would also only lower the probability
+of a collision rather than eliminate it.
+
+See docs/THREAD_SAFETY.md, which also records a threading failure that was
+initially misattributed to this code and turned out to be a benchmark harness
+artifact.
+
+=cut
+
 sub pasa_cpp_assemblies {
     my $self = shift;
     my $forced_orient = shift;
@@ -215,25 +244,35 @@ sub pasa_cpp_assemblies {
 
     my $sequence_ref;
     my $incoming_alignments_aref = $self->{incoming_alignments};
-    # create input file for pasa-cpp implementation:
-    srand();
-    my $uniq_token = time() . "-" . rand();
-    
-    my $tmpdir = $ENV{TMPDIR};
-    unless ($tmpdir) {
-        if (-d '/tmp') {
-            $tmpdir = "/tmp";
-        }
-        else {
-            $tmpdir = ".";
-        }
-    }
 
-    my $pasa_input = "$tmpdir/pasa.$uniq_token.$forced_orient.in";
-    my $pasa_output = "$tmpdir/pasa.$uniq_token.$forced_orient.out";
+    ## PASA_TMPDIR > TMPDIR > SCRATCH > /tmp > . , each checked for writability.
+    ## On a cluster this lands on per-job node-local storage instead of a
+    ## node-wide /tmp; see PerlLib/Pasa_tmpdir.pm.
+    my $tmpdir = Pasa_tmpdir::get_tmpdir();
+
+    ## These temp files are the ONLY isolation between concurrent assemblers,
+    ## and $tmpdir is shared by every thread, every process, and -- if TMPDIR
+    ## lives on a network filesystem -- every node.
+    ##
+    ## The original name was time() . "-" . rand(), which carries no pid and
+    ## no thread id. srand() seeds partly from the pid, and the pid is
+    ## IDENTICAL across ithreads of one process, so two threads entering here
+    ## in the same second could derive the same token and silently clobber
+    ## each other's pasa input/output. assemble_clusters.dbi defaults to
+    ## -T 2, so this raced by default.
+    ##
+    ## File::Temp is used rather than a longer/fancier token because it
+    ## creates the file atomically with O_EXCL and retries on collision:
+    ## uniqueness is enforced by the filesystem instead of assumed from
+    ## entropy. That also covers the cross-node case that a pid+tid token
+    ## cannot, since pids repeat across hosts.
+    my ($in_fh, $pasa_input) = tempfile("pasa.XXXXXXXXXX", DIR => $tmpdir,
+                                        SUFFIX => ".$forced_orient.in", UNLINK => 0);
+    my ($out_fh, $pasa_output) = tempfile("pasa.XXXXXXXXXX", DIR => $tmpdir,
+                                          SUFFIX => ".$forced_orient.out", UNLINK => 0);
+    close $out_fh;  ## the pasa binary writes this itself via shell redirection
+
     my @assemblies;
-  
-    open (TMPIN, ">$pasa_input") or die "Can't open file $pasa_input";
     foreach my $alignment (@$incoming_alignments_aref) {
         my $acc = $alignment->get_acc();
         ## commas not allowed in acc name:
@@ -249,9 +288,9 @@ sub pasa_cpp_assemblies {
             my ($lend, $rend) = $seg->get_coords();
             $alignText .= ",$lend-$rend";
         }
-        print TMPIN $alignText . "\n";
+        print $in_fh $alignText . "\n";
     }
-    close TMPIN;
+    close $in_fh;
     
     if ($SEE) {
         print "PASA_INPUT ($forced_orient):\n====\n";
@@ -261,14 +300,20 @@ sub pasa_cpp_assemblies {
     my $cmd = $self->{pasa_bin} . " $pasa_input > $pasa_output";
     my $ret = system $cmd;
     if ($ret) {
-        system "mv $pasa_input pasa_killer.input";
-        print STDERR "PASA died on input file.  See pasa_killer.input";
-        die;
+        ## 'pasa_killer.input' was a fixed name in cwd, so concurrent failing
+        ## threads overwrote each other's diagnostic. Keep one per failure.
+        my (undef, $killer) = tempfile("pasa_killer.XXXXXXXXXX", DIR => $tmpdir,
+                                       SUFFIX => ".input", UNLINK => 0);
+        rename($pasa_input, $killer)
+            or warn "Error, cannot preserve failing input $pasa_input: $!";
+        unlink($pasa_output);
+        print STDERR "PASA died on input file.  See $killer\n";
+        die "PASA assembler failed; offending input preserved at $killer\n";
     } else {
-        
+
         # process the output.
-        open (TMPOUT, $pasa_output) or die "Can't open $pasa_output";
-        while (<TMPOUT>) {
+        open (my $out_read_fh, '<', $pasa_output) or die "Can't open $pasa_output";
+        while (<$out_read_fh>) {
             if (/assembly:\s\(\d+\)\scontains\salignments:\s\[([^\]]+)\]\swith\sstructure\s\[([^\]]+)\]/) {
                 print "Extracting assembly output: $_" if $SEE;
                 my $acclist = $1;
@@ -301,7 +346,7 @@ sub pasa_cpp_assemblies {
             }
             
         }
-        close TMPOUT;
+        close $out_read_fh;
         
         if ($SEE) {
             print "PASA_OUTPUT ($forced_orient):\n####\n";
