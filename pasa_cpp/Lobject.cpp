@@ -43,14 +43,12 @@ int Lobject::num_unique_contained (Lobject& other) {
   
   // Process 4 words at a time for instruction-level parallelism (POPCNT has 3-cycle latency)
   int i = 0;
-  #pragma GCC ivdep
   for (; i + 4 <= min_words; i += 4) {
     num += __builtin_popcountll(contained_bits[i]   & ~other.contained_bits[i]);
     num += __builtin_popcountll(contained_bits[i+1] & ~other.contained_bits[i+1]);
     num += __builtin_popcountll(contained_bits[i+2] & ~other.contained_bits[i+2]);
     num += __builtin_popcountll(contained_bits[i+3] & ~other.contained_bits[i+3]);
   }
-  #pragma GCC ivdep
   for (; i < min_words; i++) {
     uint64_t diff = contained_bits[i] & ~other.contained_bits[i];
     num += __builtin_popcountll(diff);
