@@ -423,6 +423,12 @@ Three scripts that iterate per-`asmbl_id` (genomic scaffold) have been paralleli
 
 `Launch_PASA_pipeline.pl` passes `-T $CPU` to the parallelized scripts.
 
+`subcluster_builder.dbi` is a fourth per-`asmbl_id` script, but it forks
+external `slclust` subprocesses per cluster, so in-process threading was tried
+and benchmarked as a regression there (issue #7) — it instead got external
+process-level sharding via GNU `parallel` (issue #6). See
+[CHROMOSOME_SHARDING.md](CHROMOSOME_SHARDING.md).
+
 ### 2. N+1 Query Fix in GFF3 Output
 
 **File**: `scripts/PASA_transcripts_and_assemblies_to_GFF3.dbi`

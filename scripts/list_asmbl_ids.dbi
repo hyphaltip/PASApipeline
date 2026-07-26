@@ -1,0 +1,58 @@
+#!/usr/bin/env perl
+
+use FindBin;
+use lib ($FindBin::Bin);
+use Pasa_init;
+use Pasa_conf;
+use DB_connect;
+use strict;
+use DBI;
+use Ath1_cdnas;
+use Getopt::Std;
+
+our $SEE = 0;
+
+use vars qw ($opt_h $opt_d $DEBUG $opt_M);
+
+&getopts ('hdM:');
+
+my $usage =  <<_EOH_;
+
+Prints the distinct annotdb_asmbl_id (contig/scaffold) values present in the
+clusters table, one per line, in a stable order. Intended for use by an
+external sharding driver (sharding/shard_subcluster_builder.sh) to enumerate
+per-contig shard targets ahead of dispatching -R <asmbl_id> invocations of
+per-contig scripts such as subcluster_builder.dbi.
+
+############################# Options ###############################
+#
+# -M database name
+#
+# -d Debug
+#
+# -h print this option menu and quit
+###################### Process Args and Options #####################
+
+_EOH_
+
+    ;
+
+if ($opt_h) {die $usage;}
+
+my $MYSQLdb = $opt_M or die $usage;
+my $MYSQLserver = &Pasa_conf::getParam("MYSQLSERVER");
+my $user = &Pasa_conf::getParam("MYSQL_RW_USER");
+my $password = &Pasa_conf::getParam("MYSQL_RW_PASSWORD");
+
+my $DEBUG = $opt_d;
+
+my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password);
+
+my @asmbl_ids = &Ath1_cdnas::get_all_annotdb_asmbl_ids($dbproc);
+foreach my $asmbl_id (@asmbl_ids) {
+    print "$asmbl_id\n";
+}
+
+$dbproc->disconnect;
+
+exit(0);
