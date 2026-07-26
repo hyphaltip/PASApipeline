@@ -19,7 +19,9 @@ BINDIR = .
 #CFLAGS = -O3 -m64 -mtune=opteron -march=opteron -mfpmath=sse 
 
 # for everything else
-CFLAGS = -O3 
+CXX = g++
+CFLAGS = -O3 -march=native -flto -funroll-loops -fopenmp -std=c++11
+LDFLAGS = -flto -fopenmp
 
 
 DEPEND_FILES = *.cpp *.c *.h

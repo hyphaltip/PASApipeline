@@ -1,27 +1,22 @@
 #include "cdna_alignment_assembler.h"
 #include <algorithm>
-#include <map>
+#include <unordered_set>
 #include <iostream>
 #include <sstream>
+#include <cstdint>
+#include <climits>
 
-bool sort_CDNA_alignments (CDNA_alignment a, CDNA_alignment b) {
-  
-  struct coordset& acoords = a.get_coords();
-  struct coordset& bcoords = b.get_coords();
-  int a_lend = acoords.lend;
-  int b_lend = bcoords.lend;
-  
-  if (a_lend < b_lend) {
-    return (true);
-  } else {
-    return (false);
-  }
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+bool sort_CDNA_alignments (const CDNA_alignment& a, const CDNA_alignment& b) {
+  return a.get_coords().lend < b.get_coords().lend;
 }
 
 
 CDNA_alignment_assembler::CDNA_alignment_assembler (vector<CDNA_alignment>& incomingAlignments) : alignments (incomingAlignments) {
   
-  // sort alignments by lend position:
   if (DEBUG) {
     cout << "-sorting alignments by lend position." << endl;
   }
@@ -35,26 +30,14 @@ CDNA_alignment_assembler::CDNA_alignment_assembler (vector<CDNA_alignment>& inco
     }
   }
   
-  fuzzlength = 20; //default setting.
+  fuzzlength = 20;
   
   num_alignments = incomingAlignments.size();
   
-  // initialize pointers.
-  compatibilities = 0;
-  encapsulations = 0; 
-  
-  
 }
 
-// Destructor.
+
 CDNA_alignment_assembler::~CDNA_alignment_assembler () {
-  
-  if (compatibilities != 0) {
-    free2Darray(compatibilities);
-  }
-  if (encapsulations != 0) {
-    free2Darray(encapsulations);
-  }
 }
 
 
@@ -70,9 +53,8 @@ bool sort_Lobjects_via_combined_Lscore_R_F (Lobject* a, Lobject* b) {
 
 
 void CDNA_alignment_assembler::assembleAlignments() {
-  if (DEBUG) { cout << "instantiating required compatibility and encapsulation 2D-arrays." << endl; }
-  compatibilities = twoDarray(num_alignments, num_alignments, false);
-  encapsulations = twoDarray(num_alignments, num_alignments, false);
+  compatibilities.resize(num_alignments);
+  encapsulations.resize(num_alignments);
   
   if (DEBUG) {
     cout << "Assembling alignments." << endl;
@@ -97,48 +79,29 @@ void CDNA_alignment_assembler::assembleAlignments() {
   ostringstream assemblyTitle;
   assemblyTitle << "assembly_" << assemblies.size();
   assembly.set_title(assemblyTitle.str());
-  assemblyTitle.str(""); // clear it for later.
+  assemblyTitle.str("");
   assemblies.push_back(assembly);
   assembly_containment_list.push_back(topAssemblyIndices);
   
   if (topAssemblyIndices.size() == num_alignments) {
-    return; // all alignments assembled.
+    return;
   }
   
-  // find all maximal assemblies for alignments not included
-  // in the most maximal assembly
-  // In pasa2, we do this from scratch, ignoring our best assembly.  We'll refind it and better deal with tie situations.
-  
-  /* reinit */
   assemblies.clear();
   assembly_containment_list.clear();
   
-
-  // Do Rscan so the Fscan,Rscan trace will provide maximal assemblies from specified starting indices.
   if (DEBUG) { cout << "Doing full Rscan." << endl; }
   do_full_Rscan();
   
-  // get list of missing alignments:
   vector<bool> accountedFor(num_alignments, false);
   
-  /* pasa2 don't do it
-  // track already accounted for alignments.
-  for (int i=0; i < topAssemblyIndices.size(); i++) {
-  accountedFor[topAssemblyIndices[i]] = true;
-  }
-  */
-  
-  // gather alignments not accounted for
   vector<Lobject*> untraversedLobjs;
   for (int i=0; i < num_alignments; i++) {
     if (!accountedFor[i]) {
-      // in pasa2, this is all of 'em.
       untraversedLobjs.push_back(&Lobjects[i]);
     }
   }
   
-    
-  // assign combined scores
   for (int i = untraversedLobjs.size() - 1; i >= 0; i--) {
     Lobject& nextBestLobj = *(untraversedLobjs[i]);
     int nucleatingIndex = nextBestLobj.index;
@@ -157,26 +120,15 @@ void CDNA_alignment_assembler::assembleAlignments() {
     vector<int> alignmentIndices = get_alignment_assembly_nucleating_at_alignment_index(nucleatingIndex);
     nextBestLobj.setTraceIndices(alignmentIndices);
     
-
   }
   
-  
-  // sorted in order of increasing combined scores.
-  // get alignments in order of decreasing combined score until
-  // all alignments are accounted for.
-
   sort (untraversedLobjs.begin(), untraversedLobjs.end(), sort_Lobjects_via_combined_Lscore_R_F);
-
-  
-  // first, lets bin those assemblies that have the same number of elements and order them by 
-  // the number of missing alignments, desc.
   
   vector< vector<Lobject*> > lobjsSameSizeVec;
   int max_index = untraversedLobjs.size() - 1;
   int curr_score = untraversedLobjs[ max_index ]->combined_score;
   vector<Lobject*> curr_bin;
   
-  // remember that untraversedLobjs in sorted asc
   if (DEBUG) { cout << "\n\n\n**** Binning lobjs with same combined scores.\n";}
   
   for (int i = untraversedLobjs.size() - 1; i >= 0; i--) {
@@ -205,7 +157,6 @@ void CDNA_alignment_assembler::assembleAlignments() {
     curr_bin.clear();
   }
   
-  
   if (DEBUG) {
     cout << "\n-describing binned Lobjs:\n\n";
     cout << "There are " << lobjsSameSizeVec.size() << " bins of Lobjs.\n\n";
@@ -217,25 +168,21 @@ void CDNA_alignment_assembler::assembleAlignments() {
     }
   }
   
-  // now lobjsSameSizeVec is sorted desc
   for (int i = 0; i < lobjsSameSizeVec.size(); i++) {
     vector<Lobject*> lobj_bin = lobjsSameSizeVec[i];
     
     if (DEBUG) { cout << "-**** Analyzing lobj_bin at bin pos: " << i << endl; }
         
-        
     while (lobj_bin.size() > 0) {
       Lobject* max_missing_Lobj = get_max_missing_Lobj(lobj_bin, accountedFor);
       
       if (max_missing_Lobj == NULL) {
-        // no more missing alignments in this bin.  go to next bin.
         if (DEBUG) { cout << "no more missing alignments in bin " << i << ". Trying next bin." << endl << endl; }
         break;
       }
       
       int nucleatingIndex = max_missing_Lobj->index;
       vector<int> alignmentIndices = max_missing_Lobj->getTraceIndices();
-      // see if there are any unconsumed alignments in this assembly
       bool hasUnconsumed = false;
       for (int j=0; j < alignmentIndices.size(); j++) {
         int index = alignmentIndices[j];
@@ -252,7 +199,6 @@ void CDNA_alignment_assembler::assembleAlignments() {
         assemblies.push_back(newAssembly);
         assembly_containment_list.push_back(alignmentIndices);
         
-        // track newly consumed alignments
         for (int j=0; j<alignmentIndices.size(); j++) {
           int index = alignmentIndices[j];
           accountedFor[index] = true;
@@ -266,14 +212,11 @@ void CDNA_alignment_assembler::assembleAlignments() {
           }
         }
         if (all_accounted_for) {
-          // done.
           return;
         }
       } else {
-        // lacks unconsumed alignment
         if (DEBUG) { cout << "Apparently, no unconsumed alignments in assembly nucleating at index: " << nucleatingIndex << endl; }
-        // so none of the others in this bin will have an unconsumed alignment either
-        break; // break inner
+        break;
       }
 
       if (DEBUG) { 
@@ -281,7 +224,7 @@ void CDNA_alignment_assembler::assembleAlignments() {
         cout << "Before bin size: " << lobj_bin.size() << endl;
       }
       
-      vector<Lobject*> new_lobj_bin; // store the rest that haven't been examined yet
+      vector<Lobject*> new_lobj_bin;
       for (int i=0; i < lobj_bin.size(); i++) {
         Lobject* lobj = lobj_bin[i];
         if (lobj != max_missing_Lobj) {
@@ -293,12 +236,10 @@ void CDNA_alignment_assembler::assembleAlignments() {
       lobj_bin = new_lobj_bin;
       if (DEBUG) { cout << "after replacement, bin size: " << lobj_bin.size() << endl; }
             
-    }  // end while
+    }
 
-  } // end foreach bin
+  }
   
-  // if you've gotten this far, you must not have found assemblies for 
-  // all alignments.  Death ensues.
   cerr << "Not all alignments were accounted for by alignment assemblies." << endl;
   exit(5);
 }
@@ -313,28 +254,24 @@ void CDNA_alignment_assembler:: set_fuzzlength(int length) {
 }
 
 bool CDNA_alignment_assembler::canMerge(CDNA_alignment& a1, CDNA_alignment& a2) {
-  // check for overlap between alignments:
   if (! overlap(a1.get_coords(), a2.get_coords())) {
     if (DEBUG) { cout << "-can't merge: alignment coordsets don't overlap." << endl; }
     return (false);
   }
   
-  // make sure orientation is equivalent:
   if (a1.get_orientation() != a2.get_orientation()) {
     if (DEBUG) { cout << "-can't merge: diff orientations." << endl; }
     return (false);
   }
   
-  // check overlapping segments to ensure non-conflicting segments
   vector<Alignment_segment>& a1_segments = a1.get_alignment_segments();
   vector<Alignment_segment>& a2_segments = a2.get_alignment_segments();
   
-  // align segment orders between a1 and a2
   int starting_a1 = -1;
   int starting_a2 = -1;
-  for (int i=0; i < a1_segments.size(); i++) {
+  for (int i=0; i < (int)a1_segments.size(); i++) {
     Alignment_segment& a1_seg = a1_segments[i];
-    for (int j=0; j < a2_segments.size(); j++) {
+    for (int j=0; j < (int)a2_segments.size(); j++) {
       Alignment_segment& a2_seg = a2_segments[j];
       if (overlap(a1_seg.get_coords(), a2_seg.get_coords())) {
         starting_a1 = i;
@@ -348,19 +285,16 @@ bool CDNA_alignment_assembler::canMerge(CDNA_alignment& a1, CDNA_alignment& a2) 
   }
   
   if (starting_a1 == -1 || starting_a2 == -1) {
-    // couldn't align two segments of alignments a1 and a2
     if (DEBUG) { cout << "can't merge: couldn't align two segments of the alignments." << endl; }
     return(false);
   }
   
   if (! (starting_a1 == 0 || starting_a2 == 0)) {
-    // couldn't map first segment of either to the other
     if (DEBUG) { cout << "can't merge: couldn't map first segment of either to the other." << endl; }
     return (false);
   }
   
-  // check for compatible introns/exons within overlapping segments of alignments
-  while (starting_a1 < a1_segments.size() && starting_a2 < a2_segments.size()) {
+  while (starting_a1 < (int)a1_segments.size() && starting_a2 < (int)a2_segments.size()) {
     Alignment_segment& a1_seg = a1_segments[starting_a1];
     Alignment_segment& a2_seg = a2_segments[starting_a2];
     struct coordset& a1_seg_coords = a1_seg.get_coords();
@@ -372,45 +306,33 @@ bool CDNA_alignment_assembler::canMerge(CDNA_alignment& a1, CDNA_alignment& a2) 
     
     if (overlap(a1_seg_coords, a2_seg_coords)) {
       
-      //Analyze left splice junction
-      
-      // see if have identical splice sites
       if (a1_seg.get_left_splice_junction() || a2_seg.get_left_splice_junction()) {
         if (a1_seg.get_left_splice_junction() && a2_seg.get_left_splice_junction() && a1_lend != a2_lend) {
-          // have different splice sites
           if (DEBUG) { cout << "can't merge: diff left splice sites." << endl; }
           return (false);
         } else if (a1_seg.get_left_splice_junction() && (a2_lend + fuzzlength < a1_lend)) {
-          // not within fuzzdist
           if (DEBUG) { cout << "can't merge: left splice analysis, not within fuzz distance." << endl; }
           return (false);
         } else if (a2_seg.get_left_splice_junction() && (a1_lend + fuzzlength < a2_lend)) {
-          // not within fuzzdist
           if (DEBUG) { cout << "can't merge: left splice analysis, not within fuzz distance." << endl;}
           return (false);
         }
       }
       
-      // Analyze right splice junction
       if (a1_seg.get_right_splice_junction() || a2_seg.get_right_splice_junction()) {
         
-        // see if identical splice sites:
         if (a1_seg.get_right_splice_junction() && a2_seg.get_right_splice_junction() && a1_rend != a2_rend) {
-          // diff splice sites
           if (DEBUG) { cout << "can't merge: diff right splice sites." << endl; }
           return (false);
         } else if (a1_seg.get_right_splice_junction() && (a2_rend - fuzzlength > a1_rend)) {
           if (DEBUG) { cout << "can't merge: right splice analysis, not within fuzz distance." << endl; }
           return (false);
-          // not within fuzzlength
         } else if (a2_seg.get_right_splice_junction() && (a1_rend - fuzzlength > a2_rend)) {
-          // not within fuzzlength
           if (DEBUG) { cout << "can't merge: right splice analysis, not within fuzz distance." << endl; }
           return (false);
         }
       }
-    } else { // no overlap
-      // two ordered segments do not overlap each other.
+    } else {
       if (DEBUG) { cout << "can't merge: Two ordered segments do not overlap each other." << endl; }
       return (false);
     }
@@ -418,7 +340,6 @@ bool CDNA_alignment_assembler::canMerge(CDNA_alignment& a1, CDNA_alignment& a2) 
     starting_a2++;
   }
   
-  // passed all tests
   if (DEBUG) { cout << "-Merge possible. Passed all tests." << endl; }
   return (true);
 }
@@ -426,70 +347,66 @@ bool CDNA_alignment_assembler::canMerge(CDNA_alignment& a1, CDNA_alignment& a2) 
 
 
 CDNA_alignment CDNA_alignment_assembler::mergeAlignments(CDNA_alignment& A, CDNA_alignment& B) {
-  map<int,bool> leftsplicecoords;
-  map<int,bool> rightsplicecoords;
+  unordered_set<int> leftsplicecoords;
+  unordered_set<int> rightsplicecoords;
   
-  char orientation = A.get_orientation();  // A and B should have identical orientations.
+  char orientation = A.get_orientation();
   
-  // examine a1 coordinates
   vector<Alignment_segment>& a1_segments = A.get_alignment_segments();
-  for (int i=0; i < a1_segments.size(); i++) {
+  for (int i=0; i < (int)a1_segments.size(); i++) {
     Alignment_segment& a1_seg = a1_segments[i]; 
     struct coordset& a1_coordset = a1_seg.get_coords();
     int lend = a1_coordset.lend;
     int rend = a1_coordset.rend;
     if (a1_seg.get_left_splice_junction()) {
-      leftsplicecoords[lend] = true;
+      leftsplicecoords.insert(lend);
     }
     if (a1_seg.get_right_splice_junction()) {
-      rightsplicecoords[rend] = true;
+      rightsplicecoords.insert(rend);
     }
   }
   
-  // examine a2 coordinates
   vector<Alignment_segment>& a2_segments = B.get_alignment_segments();
-  for (int i=0; i < a2_segments.size(); i++) {
+  for (int i=0; i < (int)a2_segments.size(); i++) {
     Alignment_segment& a2_seg = a2_segments[i]; 
     struct coordset& a2_coordset = a2_seg.get_coords();
     int lend = a2_coordset.lend;
     int rend = a2_coordset.rend;
     if (a2_seg.get_left_splice_junction()) {
-      leftsplicecoords[lend] = true;
+      leftsplicecoords.insert(lend);
     }
     if (a2_seg.get_right_splice_junction()) {
-      rightsplicecoords[rend] = true;
+      rightsplicecoords.insert(rend);
     }
   }
   
   vector<struct coordset> merged_coords;
   
-  for (int i=0; i < a1_segments.size(); i++) {
+  for (int i=0; i < (int)a1_segments.size(); i++) {
     Alignment_segment& a1_seg = a1_segments[i];
     struct coordset& a1_coordset = a1_seg.get_coords();
     int a1_lend = a1_coordset.lend;
     int a1_rend = a1_coordset.rend;
     int merged_lend = -1;
     int merged_rend = -1;
-    for (int j=0; j < a2_segments.size(); j++) {
+    for (int j=0; j < (int)a2_segments.size(); j++) {
       Alignment_segment& a2_seg = a2_segments[j];
       struct coordset& a2_coordset = a2_seg.get_coords();
       int a2_lend = a2_coordset.lend;
       int a2_rend = a2_coordset.rend;
       if (overlap(a1_coordset, a2_coordset)) {
         
-        // determine merged_lend
-        if (leftsplicecoords[a1_lend]) {
+        if (leftsplicecoords.count(a1_lend)) {
           merged_lend = a1_lend;
-        } else if (leftsplicecoords[a2_lend]) {
+        } else if (leftsplicecoords.count(a2_lend)) {
           merged_lend = a2_lend;
         } else {
           merged_lend = min(a1_lend, a2_lend);
         }
         
-        // determine merged_rend
-        if (rightsplicecoords[a1_rend]) {
+        if (rightsplicecoords.count(a1_rend)) {
           merged_rend = a1_rend;
-        } else if (rightsplicecoords[a2_rend]) {
+        } else if (rightsplicecoords.count(a2_rend)) {
           merged_rend = a2_rend;
         } else {
           merged_rend = max(a1_rend, a2_rend);
@@ -499,25 +416,22 @@ CDNA_alignment CDNA_alignment_assembler::mergeAlignments(CDNA_alignment& A, CDNA
     }
     struct coordset merged_coordset;
     if (merged_lend != -1 && merged_rend != -1) {
-      // adding overlapped coords
       merged_coordset.lend = merged_lend;
       merged_coordset.rend = merged_rend;
     } else {
-      // must not have been any overlap.  Keep the a1 coords.
       merged_coordset.lend = a1_lend;
       merged_coordset.rend = a1_rend;
     }
     merged_coords.push_back(merged_coordset);
   }
   
-  // add the unconsumed a2 coordsets
-  for (int i=0; i < a2_segments.size(); i++) {
+  for (int i=0; i < (int)a2_segments.size(); i++) {
     Alignment_segment& a2_seg = a2_segments[i];
     struct coordset& a2_coords = a2_seg.get_coords();
     int a2_lend = a2_coords.lend;
     int a2_rend = a2_coords.rend;
     bool overlapFlag = false;
-    for (int j=0; j < merged_coords.size(); j++) {
+    for (int j=0; j < (int)merged_coords.size(); j++) {
       struct coordset& m_coords = merged_coords[j];
       if (overlap(a2_coords, m_coords)) {
         overlapFlag = true;
@@ -525,7 +439,6 @@ CDNA_alignment CDNA_alignment_assembler::mergeAlignments(CDNA_alignment& A, CDNA
       }
     }
     if (! overlapFlag) {
-      // consuming a2 non-overlapping coordset
       struct coordset m_coords;
       m_coords.lend = a2_lend;
       m_coords.rend = a2_rend;
@@ -534,7 +447,7 @@ CDNA_alignment CDNA_alignment_assembler::mergeAlignments(CDNA_alignment& A, CDNA
   }
   
   vector<Alignment_segment> new_seg_list;
-  for (int i=0; i < merged_coords.size(); i++) {
+  for (int i=0; i < (int)merged_coords.size(); i++) {
     struct coordset& coords = merged_coords[i];
     Alignment_segment new_seg (coords);
     new_seg_list.push_back(new_seg);
@@ -550,36 +463,23 @@ CDNA_alignment CDNA_alignment_assembler::mergeAlignments(CDNA_alignment& A, CDNA
 void CDNA_alignment_assembler::do_full_Fscan() {
   
   for (int i=1; i < num_alignments; i++) {
-    //must compare to previous alignments
     Lobject& Lobj = Lobjects[i];
     int top_score = 0;
     int top_scoring_index = -1;
-    CDNA_alignment& i_alignment = alignments[i];
     
-    for (int j = i-1; j >= 0; j--) {
+    for (int j : compatibilities[i]) {
+      if (j >= i) continue;
       
-      if (DEBUG) { cout << "FSCAN: comparing alignment " << i << " to " << j << endl; }
+      bool containment =  encapsulations[i].count(j) || encapsulations[j].count(i);
       
-//      CDNA_alignment& j_alignment = alignments[j];
-      Lobject& prevLobj = Lobjects[j];
+      if (containment) continue;
       
-      bool compatible = compatibilities[i][j];
+      int curr_total_score = Lobjects[j].LscoreF + Lobj.num_unique_contained(Lobjects[j]);
+      if (DEBUG) { cout << "FSCAN(" << i << "," << j << ") \tcurr total score: " << curr_total_score << endl;}
       
-      bool containment =  encapsulations[i][j] || encapsulations[j][i];
-      
-      if (DEBUG) { cout << "\tcompat: " << compatible << ", contained: " << containment << endl; }
-      
-      if (compatible && !containment) {
-//        int curr_Lscore = prevLobj.LscoreF;
-//        int Cscore = Lobj.num_unique_contained(prevLobj);
-//        int curr_total_score = curr_Lscore + Cscore;
-        int curr_total_score = prevLobj.LscoreF + Lobj.num_unique_contained(prevLobj);
-        if (DEBUG) { cout << "FSCAN(" << i << "," << j << ") \tcurr total score: " << curr_total_score << endl;}
-        
-        if (curr_total_score > top_score) {
-          top_scoring_index = j;
-          top_score = curr_total_score;
-        }
+      if (curr_total_score > top_score) {
+        top_scoring_index = j;
+        top_score = curr_total_score;
       }
     }
     if (top_scoring_index > -1) {
@@ -595,33 +495,22 @@ void CDNA_alignment_assembler::do_full_Fscan() {
 
 void CDNA_alignment_assembler::do_full_Rscan() {
   for (int i= num_alignments - 2; i >= 0; i--) {
-    //must compare to previous alignments
     Lobject& Lobj = Lobjects[i];
     int top_score = 0;
     int top_scoring_index = -1;
-    CDNA_alignment& i_alignment = alignments[i];
     
-    for (int j = i+1; j < num_alignments; j++) {
-      if (DEBUG) { cout << "RSCAN: comparing alignment " << i << " to " << j << endl; }
-//      CDNA_alignment& j_alignment = alignments[j];
-      Lobject& nextLobj = Lobjects[j];
+    for (int j : compatibilities[i]) {
+      if (j <= i) continue;
       
-      bool compatible = compatibilities[i][j];
+      bool containment =  encapsulations[i].count(j) || encapsulations[j].count(i);
+      if (containment) continue;
       
-      bool containment =  encapsulations[i][j] || encapsulations[j][i];
-      if (DEBUG) { cout << "\tcompat: " << compatible << ", contained: " << containment << endl; }
+      int curr_total_score = Lobjects[j].LscoreR + Lobj.num_unique_contained(Lobjects[j]);
+      if (DEBUG) { cout << "RSCAN(" << i << "," << j << ") \tcurr total score: " << curr_total_score << endl;}
       
-      if (compatible && !containment) {
-//        int curr_Lscore = nextLobj.LscoreR;
-//        int Cscore = Lobj.num_unique_contained(nextLobj);
-//        int curr_total_score = curr_Lscore + Cscore;
-        int curr_total_score = nextLobj.LscoreR + Lobj.num_unique_contained(nextLobj);
-        if (DEBUG) { cout << "RSCAN(" << i << "," << j << ") \tcurr total score: " << curr_total_score << endl;}
-        
-        if (curr_total_score > top_score) {
-          top_scoring_index = j;
-          top_score = curr_total_score;
-        }
+      if (curr_total_score > top_score) {
+        top_scoring_index = j;
+        top_score = curr_total_score;
       }
     }
     if (top_scoring_index > -1) {
@@ -634,9 +523,6 @@ void CDNA_alignment_assembler::do_full_Rscan() {
 }
 
 bool CDNA_alignment_assembler::encapsulates (CDNA_alignment& A, CDNA_alignment& B) {
-  
-  // checks to see if B span is contained within A span
-  
   struct coordset& Acoords = A.get_coords();
   int a_lend = Acoords.lend;
   int a_rend = Acoords.rend;
@@ -655,42 +541,55 @@ bool CDNA_alignment_assembler::encapsulates (CDNA_alignment& A, CDNA_alignment& 
 
 void CDNA_alignment_assembler::determine_compatibilities_and_encapsulations() {
   
-  // Alignments are sorted by lend position.
-  // For alignment i with span [lend_i, rend_i], only alignments j
-  // where lend_j <= rend_i can potentially overlap.
-  // Once alignments[j].lend > alignments[i].rend, break the inner loop.
-  for (int i=0; i < num_alignments; i++) {
+  // Build interval tree: sorted array of (lend, index) pairs
+  vector<pair<int32_t, int>> starts;
+  starts.reserve(num_alignments);
+  for (int i = 0; i < num_alignments; i++) {
+    starts.emplace_back(alignments[i].get_coords().lend, i);
+  }
+  sort(starts.begin(), starts.end());
+  
+  compatibilities.resize(num_alignments);
+  encapsulations.resize(num_alignments);
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 16)
+#endif
+  for (int i = 0; i < num_alignments; i++) {
     
     struct coordset& icoords = alignments[i].get_coords();
     int i_rend = icoords.rend;
+    int i_lend = icoords.lend;
     
-    for (int j=i+1; j < num_alignments; j++) {
+    // Binary search for first start > i_rend
+    auto it = upper_bound(starts.begin(), starts.end(),
+                          make_pair(i_rend, INT_MAX));
+    int limit = it - starts.begin();
     
-      struct coordset& jcoords = alignments[j].get_coords();
+    for (int si = 0; si < limit; si++) {
+      int j = starts[si].second;
+      if (j <= i) continue;
       
-      // Early termination: sorted by lend, so no further overlaps with i
-      if (jcoords.lend > i_rend) {
-        break;
-      }
+      // Complete overlap check: rend must span back past i.lend
+      if (alignments[j].get_coords().rend < i_lend) continue;
       
       if (DEBUG) { cout << "can merge " << i << " to " << j << " ?" << endl; }
-      bool mergeable = false;
       if (canMerge(alignments[i], alignments[j])) {
-        compatibilities[i][j] = true;
-        compatibilities[j][i] = true;
-        mergeable = true;
-      }
-      if (mergeable) { 
-        // check for encapsulation
+#ifdef _OPENMP
+#pragma omp critical
+#endif
+        {
+        compatibilities[i].insert(j);
+        compatibilities[j].insert(i);
         if (encapsulates(alignments[i],alignments[j])) {
           if (DEBUG) { cout << "alignment " << i << " encapsulates " << j << endl; }
-          encapsulations[i][j] = true;
+          encapsulations[i].insert(j);
         }
         if (encapsulates(alignments[j],alignments[i])) {
           if (DEBUG) { cout << "alignment " << j << " encapsulates " << i << endl; }
-          encapsulations[j][i] = true;
+          encapsulations[j].insert(i);
         }
-        
+        }
       }
     }
   }
@@ -699,15 +598,14 @@ void CDNA_alignment_assembler::determine_compatibilities_and_encapsulations() {
 
 
 void CDNA_alignment_assembler::populateLobjects () {
+  Lobjects.clear();
+  Lobjects.reserve(num_alignments);
   for (int i=0; i < num_alignments; i++) {
     Lobject L (i, num_alignments);
     vector<int> contained;
-    contained.push_back(i); // include itself in the containment list.
-    for (int j=0; j < num_alignments; j++) {
-      if (encapsulations[i][j]) {
-        if (DEBUG) { cout << "Populating Lobj: align " << i << " contains " << j << endl; }
-        contained.push_back(j);
-      }
+    contained.push_back(i);
+    for (int j : encapsulations[i]) {
+      contained.push_back(j);
     }
     L.setContainedIndices(contained);
     Lobjects.push_back(L);
@@ -724,9 +622,14 @@ vector<int> CDNA_alignment_assembler::forwardTrace (int startIndex) {
     if (DEBUG) { cout << "trace index: " << Lobj->index << endl; }
     if (DEBUG) { cout << Lobj->toString(); }
     
-    for (int i = 0; i < num_alignments; i++) {
-      if (Lobj->contained_cdna_indices[i]) {
-        tracker[i] = true;
+    // Iterate only set bits using ctz
+    for (int w = 0; w < (int)Lobj->contained_bits.size(); w++) {
+      uint64_t word = Lobj->contained_bits[w];
+      while (word) {
+        int bit = __builtin_ctzll(word);
+        int align_idx = w * 64 + bit;
+        tracker[align_idx] = true;
+        word &= word - 1;
       }
     }
     Lobj = Lobj->toLptr;
@@ -749,9 +652,13 @@ vector<int> CDNA_alignment_assembler::backTrace(int startIndex) {
     if (DEBUG) { cout << "trace index: " << Lobj->index << endl;
                  cout << Lobj->toString(); }
     
-    for (int i = 0; i < num_alignments; i++) {
-      if (Lobj->contained_cdna_indices[i]) {
-        tracker[i] = true;
+    for (int w = 0; w < (int)Lobj->contained_bits.size(); w++) {
+      uint64_t word = Lobj->contained_bits[w];
+      while (word) {
+        int bit = __builtin_ctzll(word);
+        int align_idx = w * 64 + bit;
+        tracker[align_idx] = true;
+        word &= word - 1;
       }
     }
     Lobj = Lobj->fromLptr;
@@ -767,7 +674,6 @@ vector<int> CDNA_alignment_assembler::backTrace(int startIndex) {
 }
 
 CDNA_alignment CDNA_alignment_assembler::create_assembly(vector<int> Alignment_index_listing) {
-  // assemble alignments in order from left to right.
   if (Alignment_index_listing.empty()) {
     cerr << "empty list of indices, can't create assembly." << endl;
     exit(6);
@@ -777,8 +683,8 @@ CDNA_alignment CDNA_alignment_assembler::create_assembly(vector<int> Alignment_i
   
   int alignment_index = Alignment_index_listing[0];
   
-  CDNA_alignment assembly = alignments[alignment_index]; // copy the first alignment
-  for (int i = 1; i < Alignment_index_listing.size(); i++) {
+  CDNA_alignment assembly = alignments[alignment_index];
+  for (int i = 1; i < (int)Alignment_index_listing.size(); i++) {
     alignment_index = Alignment_index_listing[i];
     CDNA_alignment& nextAlignment = alignments[alignment_index];
     CDNA_alignment newAssembly = mergeAlignments(assembly, nextAlignment);
@@ -790,10 +696,9 @@ CDNA_alignment CDNA_alignment_assembler::create_assembly(vector<int> Alignment_i
 
 
 vector<int> CDNA_alignment_assembler::get_top_scoring_alignment() {
-  // find the highest Lscore from Forward scan
   int top_score = 0;
   int top_scoring_index = -1;
-  for (int i=0; i < Lobjects.size(); i++) {
+  for (int i=0; i < (int)Lobjects.size(); i++) {
     Lobject* L = & Lobjects[i];
     int Lscore = L->LscoreF;
     if (DEBUG) { cout << "LscoreF of alignment " << i << " is " << Lscore << endl; }
@@ -816,9 +721,9 @@ vector<int> CDNA_alignment_assembler::get_alignment_assembly_nucleating_at_align
 
 vector<int> CDNA_alignment_assembler::unique_entries(vector<vector<int> > vecvec) {
   vector<bool> uniqueMap(num_alignments, false);
-  for (int j=0; j < vecvec.size(); j++) {
+  for (int j=0; j < (int)vecvec.size(); j++) {
     vector<int> myvec = vecvec[j];
-    for (int i=0; i <myvec.size(); i++) {
+    for (int i=0; i < (int)myvec.size(); i++) {
       int entry = myvec[i];
       uniqueMap[entry] = true;
     }
@@ -836,11 +741,10 @@ vector<int> CDNA_alignment_assembler::unique_entries(vector<vector<int> > vecvec
 
 string CDNA_alignment_assembler::toAlignIllustration (int lineLength) {
   
-  // get range for all alignment coordinates.
   int min_coord;
   int max_coord;
   vector<int> allCoords;
-  for (int i=0; i < alignments.size(); i++) {
+  for (int i=0; i < (int)alignments.size(); i++) {
     struct coordset& coords = alignments[i].get_coords();
     allCoords.push_back(coords.lend);
     allCoords.push_back(coords.rend);
@@ -853,24 +757,24 @@ string CDNA_alignment_assembler::toAlignIllustration (int lineLength) {
   ostringstream alignment_text;
   ostringstream assembly_summary;
   alignment_text << "Individual Alignments: (" << num_alignments << ")" << endl;
-  for (int i=0; i < alignments.size(); i++) {
+  for (int i=0; i < (int)alignments.size(); i++) {
     alignment_text << alignments[i].toAlignIllustration(min_coord, rel_max, lineLength) << " index: [" << i << "]" << endl;
   }
   
   if (assemblies.size() != 0) {
     alignment_text << endl << "ASSEMBLIES: (" << assemblies.size() << ")" << endl;
-    for (int i=0; i < assemblies.size(); i++) {
+    for (int i=0; i < (int)assemblies.size(); i++) {
       alignment_text << assemblies[i].toAlignIllustration(min_coord, rel_max, lineLength) << " score: (" << assembly_containment_list[i].size() << ") contains [";
       assembly_summary << "assembly: (" << i << ") contains alignments: [";
       vector<int> assemblyIndexList = assembly_containment_list[i];
-      for (int j=0; j < assemblyIndexList.size(); j++) {
+      for (int j=0; j < (int)assemblyIndexList.size(); j++) {
         int alignmentIndex = assemblyIndexList[j];
         alignment_text << alignmentIndex;
-        if (j != assemblyIndexList.size() -1) {
+        if (j != (int)assemblyIndexList.size() -1) {
           alignment_text << ",";
         }
         assembly_summary << alignments[alignmentIndex].get_title(); 
-        if (j != assemblyIndexList.size() -1) {
+        if (j != (int)assemblyIndexList.size() -1) {
           assembly_summary << ",";
         }
       }
@@ -893,16 +797,15 @@ Lobject* CDNA_alignment_assembler::get_max_missing_Lobj (vector<Lobject*>& lobj_
          << "sifting thru bin of size: " << lobj_bin.size() << endl;
   }
   
-  for (int i=0; i < lobj_bin.size(); i++) {
+  for (int i=0; i < (int)lobj_bin.size(); i++) {
     Lobject* curr_lobj = lobj_bin[i];
     
     if (DEBUG) { cout << "\tanalyzing lobj[" << i << "] " << " at index: " << curr_lobj->index << endl; }
     
     vector<int> alignmentIndices = curr_lobj->getTraceIndices();
-    // see if there are any unconsumed alignments in this assembly
     
     int num_missing = 0;
-    for (int j=0; j < alignmentIndices.size(); j++) {
+    for (int j=0; j < (int)alignmentIndices.size(); j++) {
       int index = alignmentIndices[j];
       if (! accountedFor[index]) {
         num_missing++;
@@ -922,7 +825,5 @@ Lobject* CDNA_alignment_assembler::get_max_missing_Lobj (vector<Lobject*>& lobj_
     }
   }
   
-  
-  return (lobj); // NULL returned if none found.
+  return (lobj);
 }
-

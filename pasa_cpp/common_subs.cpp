@@ -99,32 +99,11 @@ bool** twoDarray (int x, int y, bool init) {
    
 
 void free2Darray (int** twoD) {
-  
-  /*  temporarily disabling while I recode the 2D-array
-      
-      // first, free the full space alloc:
-      int* firstPtr = twoD[0];
-      delete [] firstPtr;
-      
-      // now, delete the ** array
-      delete [] twoD;
-
-  */
-
+  // No longer used by cdna_alignment_assembler (now uses sparse adjacency lists).
 }
 
 void free2Darray (bool** twoD) {
-  
-  /*  temporarily disablling while I recode the 2D-array
-      // first, free the full space alloc:
-      bool* firstPtr = twoD[0];
-      delete [] firstPtr;
-      
-      // now, delete the ** array
-      delete [] twoD;
-      
-  */
-  
+  // No longer used by cdna_alignment_assembler (now uses sparse adjacency lists).
 }
 
 

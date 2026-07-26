@@ -6,6 +6,7 @@
 #include "alignment_segment.h"
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 using namespace std;
 
@@ -13,14 +14,9 @@ extern bool DEBUG;
 
 class CDNA_alignment_assembler {
  public:
-  CDNA_alignment_assembler(vector<CDNA_alignment>& incomingAlignments); /* constructor
-									    the CDNA_alignment pointers
-									    are copied over to a 	
-									    local vector */
+  CDNA_alignment_assembler(vector<CDNA_alignment>& incomingAlignments);
 
-  ~CDNA_alignment_assembler(); /* Destructor. */  
-  
-  
+  ~CDNA_alignment_assembler();  
   
   void assembleAlignments();
   
@@ -28,15 +24,15 @@ class CDNA_alignment_assembler {
 
   void set_fuzzlength(int);
   
-  string toAlignIllustration(int lineLength); //default 100
+  string toAlignIllustration(int lineLength);
 
 
  private:
-  vector<CDNA_alignment>& alignments;  //after sorted by lend, must stay in sorted positions.
-  vector<CDNA_alignment> assemblies; //assemblies added in order. 
+  vector<CDNA_alignment>& alignments;
+  vector<CDNA_alignment> assemblies;
 
-  vector<vector<int> > assembly_containment_list; // holds list of alignment indices contained in assemblies.
-  int fuzzlength; // default set to 20 bp
+  vector<vector<int> > assembly_containment_list;
+  int fuzzlength;
   
   bool canMerge(CDNA_alignment&, CDNA_alignment&);
   CDNA_alignment mergeAlignments (CDNA_alignment& A, CDNA_alignment& B); 
@@ -46,9 +42,9 @@ class CDNA_alignment_assembler {
   void do_full_Fscan();
   void do_full_Rscan();
 
-  bool encapsulates(CDNA_alignment& A, CDNA_alignment& B); //returns true if alignment A encapuslates the span of alignment B
+  bool encapsulates(CDNA_alignment& A, CDNA_alignment& B);
   void determine_compatibilities_and_encapsulations();
-  vector<int> forwardTrace (int); // index to begin trace.
+  vector<int> forwardTrace (int);
   vector<int> backTrace(int); 
   CDNA_alignment create_assembly(vector<int>); 
   vector<int> get_top_scoring_alignment();
@@ -56,8 +52,8 @@ class CDNA_alignment_assembler {
   vector<int> unique_entries(vector<vector<int> >);
   void populateLobjects();
   
-  bool** compatibilities;
-  bool**  encapsulations;
+  vector<unordered_set<int>> compatibilities;
+  vector<unordered_set<int>> encapsulations;
   int num_alignments;
   
   Lobject* get_max_missing_Lobj(vector<Lobject*>&, vector<bool>&);
@@ -65,5 +61,3 @@ class CDNA_alignment_assembler {
 };
 
 #endif
-
-

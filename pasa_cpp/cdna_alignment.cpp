@@ -99,6 +99,10 @@ struct coordset& CDNA_alignment::get_coords() {
   return (this->coords);
 }
 
+const struct coordset& CDNA_alignment::get_coords() const {
+  return (this->coords);
+}
+
 void CDNA_alignment::add_alignment_segment (Alignment_segment as) {
   this->alignment_segs.push_back(as);
 }
