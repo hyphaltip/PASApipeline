@@ -56,33 +56,56 @@ sub new  {
 }
 
 
+## Memoized path to the assembler binary.
+##
+## This used to be re-derived in _init() with a `which` backtick, i.e. a
+## fork+exec of /bin/sh on EVERY constructor call. assemble_clusters.dbi
+## constructs one assembler per cluster -- ~16k per fungal genome -- so that
+## was ~16k shell spawns purely to re-answer a question whose answer cannot
+## change during a run. Measured at ~13 ms per call, which is ~219s over 16k
+## clusters, a large fraction of that script's runtime. It is worse under
+## threading, where forking from a multi-threaded interpreter costs more.
+##
+## Resolution is a pure-Perl PATH scan, so the common case costs no subprocess
+## at all (mirroring SingleLinkageClusterer::_which).
+my $PASA_BIN;
+
+sub _resolve_pasa_bin {
+
+    return $PASA_BIN if defined $PASA_BIN;
+
+    ## NB: resolve lazily on first use, NOT at module load. Callers such as
+    ## assemble_clusters.dbi prepend their own bin/ to $ENV{PATH} at RUNTIME,
+    ## which happens after `use` has already compiled this module -- resolving
+    ## at load time would search the un-augmented PATH and miss pasa_rust.
+    ##
+    ## The C++ assembler is the default; pasa_rust is only used if it's
+    ## explicitly requested via $PASA_ASSEMBLER, or if no 'pasa' binary exists.
+    my @candidates = $ENV{PASA_ASSEMBLER}
+        ? ($ENV{PASA_ASSEMBLER}, 'pasa', 'pasa_rust')
+        : ('pasa', 'pasa_rust');
+
+    foreach my $tool (@candidates) {
+        foreach my $dir (split(/:/, $ENV{PATH} || '')) {
+            next unless length $dir;
+            my $candidate = "$dir/$tool";
+            if (-x $candidate && ! -d $candidate) {
+                $PASA_BIN = $candidate;
+                return $PASA_BIN;
+            }
+        }
+    }
+
+    confess "Error, cannot find a 'pasa' or 'pasa_rust' binary in PATH: $ENV{PATH}";
+}
+
 sub _init {
     my $self = shift;
     $self->{incoming_alignments} = []; #these are the alignments to be assembled.
     $self->{assemblies} = []; #contains list of all singletons and assemblies.
     $self->{fuzzlength} = $FUZZLENGTH;  #default setting.
-    
-    ## The C++ assembler is the default.  pasa_rust is only used if it is
-    ## explicitly requested via $PASA_ASSEMBLER, or if no pasa binary exists.
-    my $pasa_bin = "";
-    if ($ENV{PASA_ASSEMBLER}) {
-        $pasa_bin = `which $ENV{PASA_ASSEMBLER} 2>/dev/null`;
-        $pasa_bin =~ s/\s//g;
-    }
-    unless ($pasa_bin && -x $pasa_bin) {
-        $pasa_bin = `which pasa 2>/dev/null`;
-        $pasa_bin =~ s/\s//g;
-    }
-    unless ($pasa_bin && -x $pasa_bin) {
-        $pasa_bin = `which pasa_rust 2>/dev/null`;
-        $pasa_bin =~ s/\s//g;
-    }
 
-    unless (-x $pasa_bin) {
-        confess "Error, pasa binary [$pasa_bin] isn't executable or couldn't be found.";
-    }
-    
-    $self->{pasa_bin} = $pasa_bin;
+    $self->{pasa_bin} = &_resolve_pasa_bin();
 
 }
 
