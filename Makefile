@@ -3,6 +3,15 @@
 ## run make like so:
 ##
 ##   make CC=gcc CXX=g++
+##
+## The C++ assembler (bin/pasa) is the default and is always built.  The
+## optional Rust binaries are not built or installed unless asked for:
+##
+##   make WITH_RUST=1
+##
+## or build them on their own at any time with `make rust`.
+
+WITH_RUST ?= 0
 
 all:
 	if [ ! -d bin ]; then mkdir bin; fi
@@ -13,9 +22,13 @@ all:
 	cd pasa-plugins/seqclean/psx && $(MAKE) && cp psx ../../../bin
 	cd pasa-plugins/seqclean/trimpoly && $(MAKE) && cp trimpoly ../../../bin
 	cp pasa-plugins/seqclean/seqclean/seqclean pasa-plugins/seqclean/seqclean/cln2qual pasa-plugins/seqclean/seqclean/bin/seqclean.psx ./bin
-	$(MAKE) rust
+	@if [ "$(WITH_RUST)" = "1" ]; then \
+	   $(MAKE) rust; \
+	 else \
+	   echo "Skipping optional Rust binaries (build them with: make WITH_RUST=1)"; \
+	 fi
 
-## Build optimized Rust components (pasa assembler + slclust clusterer)
+## Build optional Rust components (pasa assembler + slclust clusterer)
 rust:
 	if [ ! -d bin ]; then mkdir bin; fi
 	cd pasa_rust && cargo build --release
