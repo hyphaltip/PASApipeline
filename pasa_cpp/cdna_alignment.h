@@ -23,6 +23,7 @@ class CDNA_alignment {
   
   void set_coords (int lend, int rend);
   struct coordset& get_coords ();
+  const struct coordset& get_coords () const;
   
   void add_alignment_segment(Alignment_segment);
   vector<Alignment_segment>& get_alignment_segments();

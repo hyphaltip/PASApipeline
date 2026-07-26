@@ -17,12 +17,6 @@ int max (int, int);
 int max (vector<int>); // returns max of integer list
 
 bool overlap (struct coordset& a, struct coordset& b); // deterimines if coordsets overlap
-  
-int** twoDarray (int x, int y);
-bool** twoDarray (int x, int y, bool init);
-
-void free2Darray (int** twoD);
-void free2Darray (bool** twoD);
 
 #endif
 

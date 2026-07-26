@@ -1,11 +1,12 @@
 #ifndef __Lobject__
 #define __Lobject__
 
-#include <map>
 #include <vector>
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <cstdint>
+#include <algorithm>
 
 extern bool DEBUG;
 
@@ -18,11 +19,11 @@ class Lobject {
   int index;
   int num_alignments;
   
-  vector<bool> contained_cdna_indices; 
+  vector<uint64_t> contained_bits;
   
   int LscoreF;
   int LscoreR;
-  int combined_score;  /* LscoreF + LscoreR - num_contained_indices */
+  int combined_score;
   Lobject* toLptr;
   Lobject* fromLptr;
   string toString();
@@ -30,11 +31,11 @@ class Lobject {
   void setTraceIndices (vector<int>);
   vector<int> getTraceIndices();
 
+  void setContainedBit(int i);
   void setContainedIndices(vector<int>);
-  int num_contained_indices; //includes self.
+  int num_contained_indices;
 
-  int num_unique_contained(Lobject& other); /* returns number alignments contained in 
-					       this, not in other */
+  int num_unique_contained(Lobject& other);
  private:
 
   vector<int> traceIndices;

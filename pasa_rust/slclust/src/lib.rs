@@ -1,11 +1,23 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::io::{self, Write};
 
-/// Tier 4 Optimization: Graph with HashSet-based adjacency lists.
+/// Tier 4 Optimization: Graph with set-based adjacency lists.
 ///
 /// The original C++ implementation uses `vector<Graphnode*>` for adjacency
 /// lists, with O(degree) linear scan for duplicate detection in `addLinkedNode`.
-/// This Rust implementation uses `HashSet<usize>` for O(1) duplicate detection.
+///
+/// Adjacency is `BTreeSet<usize>` rather than `HashSet<usize>`: a `HashSet`'s
+/// iteration order depends on `RandomState`'s per-process hasher seed, so two
+/// runs on identical input produce clusters with the same membership but a
+/// different member order within each line (verified: 5/5 runs gave distinct
+/// output checksums on a 60-node-component fixture). Downstream consumers
+/// (`PerlLib/SingleLinkageClusterer.pm` and everything that calls
+/// `build_clusters`) only ever iterate cluster members with `foreach`, never
+/// index a specific position, so member order carries no pipeline semantics —
+/// but non-reproducible output makes results hard to diff and to test.
+/// `BTreeSet` iterates in ascending index order deterministically, keeps the
+/// same O(log d) insert/lookup and O(min(|A|,|B|)) `.intersection()` API
+/// `calc_link_coeff` needs, and needs no new crate dependency.
 ///
 /// Additional optimizations:
 /// - Iterative DFS instead of recursive (avoids stack overflow on large clusters)
@@ -20,8 +32,8 @@ pub struct Graph {
 
 struct GraphNode {
     name: String,
-    /// HashSet for O(1) duplicate detection (Tier 4 optimization)
-    neighbors: HashSet<usize>,
+    /// BTreeSet for deterministic, ordered iteration (see module doc above).
+    neighbors: BTreeSet<usize>,
     marked: bool,
 }
 
@@ -52,7 +64,7 @@ impl Graph {
         let idx = self.nodes.len();
         self.nodes.push(GraphNode {
             name: name.to_string(),
-            neighbors: HashSet::new(),
+            neighbors: BTreeSet::new(),
             marked: false,
         });
         self.node_lookup.insert(name.to_string(), idx);

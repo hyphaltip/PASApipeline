@@ -62,13 +62,22 @@ sub _init {
     $self->{assemblies} = []; #contains list of all singletons and assemblies.
     $self->{fuzzlength} = $FUZZLENGTH;  #default setting.
     
-    my $pasa_bin = `which pasa_rust 2>/dev/null`;
-    $pasa_bin =~ s/\s//g;
+    ## The C++ assembler is the default.  pasa_rust is only used if it is
+    ## explicitly requested via $PASA_ASSEMBLER, or if no pasa binary exists.
+    my $pasa_bin = "";
+    if ($ENV{PASA_ASSEMBLER}) {
+        $pasa_bin = `which $ENV{PASA_ASSEMBLER} 2>/dev/null`;
+        $pasa_bin =~ s/\s//g;
+    }
     unless ($pasa_bin && -x $pasa_bin) {
         $pasa_bin = `which pasa 2>/dev/null`;
         $pasa_bin =~ s/\s//g;
     }
-    
+    unless ($pasa_bin && -x $pasa_bin) {
+        $pasa_bin = `which pasa_rust 2>/dev/null`;
+        $pasa_bin =~ s/\s//g;
+    }
+
     unless (-x $pasa_bin) {
         confess "Error, pasa binary [$pasa_bin] isn't executable or couldn't be found.";
     }
