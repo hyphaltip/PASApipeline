@@ -9,27 +9,21 @@ Graphnode::Graphnode (string s) {
 
 
 
-string Graphnode::getNodename () {
+const string& Graphnode::getNodename () {
   return (this->nodeName);
 }
 
 void Graphnode::addLinkedNode (Graphnode* a) {
-  bool found = false;
-  string a_name = a->getNodename();
-  for (unsigned int i=0; i < linkedNodes.size(); i++) {
-    string s = linkedNodes[i]->getNodename();
-    if (s.compare(a_name) == 0) {
-      found = true;
-      break;
-    }
-  }
-  if (! found) {
+  // Graph::getGraphnode hands out exactly one Graphnode* per unique name, so
+  // pointer identity is equivalent to the name comparison this replaced, and
+  // is O(1) average instead of an O(degree) linear scan of string compares.
+  if (linkedNodesSet.insert(a).second) {
     linkedNodes.push_back(a);
   }
 }
 
 
-	
+
 int Graphnode::numLinkedNodes () {
   return (linkedNodes.size());
 }
@@ -46,18 +40,14 @@ string Graphnode::toString () {
       ret += ", ";
     }
   }
-  
+
   return (ret);
 }
 
 
 
-map<string,bool> Graphnode::getLinkedNodeNameMap () {
-  map<string,bool> m;
-  for (unsigned int i=0; i < linkedNodes.size(); i++) {
-    m [ linkedNodes[i]->getNodename() ] = true;
-  }
-  return (m);
+bool Graphnode::isLinkedTo (Graphnode* a) {
+  return (linkedNodesSet.count(a) > 0);
 }
 
 vector<Graphnode*>& Graphnode::getLinkedNodes () {

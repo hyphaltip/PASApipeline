@@ -54,6 +54,11 @@ class CDNA_alignment_assembler {
   
   vector<vector<int>> compatibilities;
   vector<vector<int>> encapsulations;
+
+  /* scratch buffers reused by mergeAlignments so the per-call splice-coordinate
+     sets cost no allocations; mergeAlignments is only ever called serially. */
+  vector<int> merge_left_splicecoords;
+  vector<int> merge_right_splicecoords;
   int num_alignments;
   
   Lobject* get_max_missing_Lobj(vector<Lobject*>&, vector<bool>&);

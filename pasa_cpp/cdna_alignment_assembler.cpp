@@ -1,6 +1,5 @@
 #include "cdna_alignment_assembler.h"
 #include <algorithm>
-#include <unordered_set>
 #include <iostream>
 #include <sstream>
 #include <cstdint>
@@ -346,9 +345,20 @@ bool CDNA_alignment_assembler::canMerge(CDNA_alignment& a1, CDNA_alignment& a2) 
 
 
 
+/* the splice-coordinate sets hold one entry per alignment segment (a handful),
+   so a linear scan over a reused vector beats any hashed container here. */
+static inline bool has_coord (const vector<int>& coords, int val) {
+  for (size_t i = 0; i < coords.size(); i++) {
+    if (coords[i] == val) return true;
+  }
+  return false;
+}
+
 CDNA_alignment CDNA_alignment_assembler::mergeAlignments(CDNA_alignment& A, CDNA_alignment& B) {
-  unordered_set<int> leftsplicecoords;
-  unordered_set<int> rightsplicecoords;
+  vector<int>& leftsplicecoords = merge_left_splicecoords;
+  vector<int>& rightsplicecoords = merge_right_splicecoords;
+  leftsplicecoords.clear();
+  rightsplicecoords.clear();
   
   char orientation = A.get_orientation();
   
@@ -359,10 +369,10 @@ CDNA_alignment CDNA_alignment_assembler::mergeAlignments(CDNA_alignment& A, CDNA
     int lend = a1_coordset.lend;
     int rend = a1_coordset.rend;
     if (a1_seg.get_left_splice_junction()) {
-      leftsplicecoords.insert(lend);
+      leftsplicecoords.push_back(lend);
     }
     if (a1_seg.get_right_splice_junction()) {
-      rightsplicecoords.insert(rend);
+      rightsplicecoords.push_back(rend);
     }
   }
   
@@ -373,10 +383,10 @@ CDNA_alignment CDNA_alignment_assembler::mergeAlignments(CDNA_alignment& A, CDNA
     int lend = a2_coordset.lend;
     int rend = a2_coordset.rend;
     if (a2_seg.get_left_splice_junction()) {
-      leftsplicecoords.insert(lend);
+      leftsplicecoords.push_back(lend);
     }
     if (a2_seg.get_right_splice_junction()) {
-      rightsplicecoords.insert(rend);
+      rightsplicecoords.push_back(rend);
     }
   }
   
@@ -396,17 +406,17 @@ CDNA_alignment CDNA_alignment_assembler::mergeAlignments(CDNA_alignment& A, CDNA
       int a2_rend = a2_coordset.rend;
       if (overlap(a1_coordset, a2_coordset)) {
         
-        if (leftsplicecoords.count(a1_lend)) {
+        if (has_coord(leftsplicecoords, a1_lend)) {
           merged_lend = a1_lend;
-        } else if (leftsplicecoords.count(a2_lend)) {
+        } else if (has_coord(leftsplicecoords, a2_lend)) {
           merged_lend = a2_lend;
         } else {
           merged_lend = min(a1_lend, a2_lend);
         }
         
-        if (rightsplicecoords.count(a1_rend)) {
+        if (has_coord(rightsplicecoords, a1_rend)) {
           merged_rend = a1_rend;
-        } else if (rightsplicecoords.count(a2_rend)) {
+        } else if (has_coord(rightsplicecoords, a2_rend)) {
           merged_rend = a2_rend;
         } else {
           merged_rend = max(a1_rend, a2_rend);
@@ -447,16 +457,14 @@ CDNA_alignment CDNA_alignment_assembler::mergeAlignments(CDNA_alignment& A, CDNA
   }
   
   vector<Alignment_segment> new_seg_list;
+  new_seg_list.reserve(merged_coords.size());
   for (int i=0; i < (int)merged_coords.size(); i++) {
     struct coordset& coords = merged_coords[i];
-    Alignment_segment new_seg (coords);
-    new_seg_list.push_back(new_seg);
+    new_seg_list.push_back(Alignment_segment(coords));
   }
-  
-  CDNA_alignment merged_alignment (new_seg_list, orientation);
-  
-  return (merged_alignment);
-  
+
+  return (CDNA_alignment(std::move(new_seg_list), orientation));
+
 }
 
 
@@ -467,9 +475,13 @@ void CDNA_alignment_assembler::do_full_Fscan() {
     int top_score = 0;
     int top_scoring_index = -1;
     
-    for (int j : compatibilities[i]) {
+    // descending j: with a strict > on the score, the highest-index candidate
+    // wins a tie, matching the original dense-matrix scan from i-1 down to 0.
+    for (vector<int>::const_reverse_iterator jit = compatibilities[i].rbegin();
+         jit != compatibilities[i].rend(); ++jit) {
+      int j = *jit;
       if (j >= i) continue;
-      
+
       bool containment =  binary_search(encapsulations[i].begin(), encapsulations[i].end(), j)
                        || binary_search(encapsulations[j].begin(), encapsulations[j].end(), i);
       
@@ -500,9 +512,11 @@ void CDNA_alignment_assembler::do_full_Rscan() {
     int top_score = 0;
     int top_scoring_index = -1;
     
+    // ascending j: lowest-index candidate wins a tie, matching the original
+    // dense-matrix scan from i+1 up to num_alignments-1.
     for (int j : compatibilities[i]) {
       if (j <= i) continue;
-      
+
       bool containment =  binary_search(encapsulations[i].begin(), encapsulations[i].end(), j)
                        || binary_search(encapsulations[j].begin(), encapsulations[j].end(), i);
       if (containment) continue;
@@ -541,67 +555,84 @@ bool CDNA_alignment_assembler::encapsulates (CDNA_alignment& A, CDNA_alignment& 
   
 }
 
+struct pair_compat {
+  int i;
+  int j;
+  bool i_encapsulates_j;
+  bool j_encapsulates_i;
+};
+
 void CDNA_alignment_assembler::determine_compatibilities_and_encapsulations() {
-  
-  // Build interval tree: sorted array of (lend, index) pairs
-  vector<pair<int32_t, int>> starts;
-  starts.reserve(num_alignments);
-  for (int i = 0; i < num_alignments; i++) {
-    starts.emplace_back(alignments[i].get_coords().lend, i);
-  }
-  sort(starts.begin(), starts.end());
-  
+
+  // alignments are kept sorted by lend (constructor), so for a given i the only
+  // possible partners are j > i up to the first alignment whose lend runs past
+  // i's rend.  That makes each row an O(k) scan over the truly overlapping
+  // candidates rather than a scan over the whole array.
+
   compatibilities.resize(num_alignments);
   encapsulations.resize(num_alignments);
 
+  // Each unordered pair is examined exactly once (by the lower index), so the
+  // work is gathered into per-thread buffers and scattered serially afterwards.
+  // Scattering serially keeps the row contents independent of thread count.
+  vector<pair_compat> found;
+
+  // run serially under -v: the per-candidate tracing writes to cout from the
+  // loop body, and concurrent threads interleave it into unreadable output.
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic, 16)
+#pragma omp parallel if(!DEBUG)
 #endif
-  for (int i = 0; i < num_alignments; i++) {
-    
-    struct coordset& icoords = alignments[i].get_coords();
-    int i_rend = icoords.rend;
-    int i_lend = icoords.lend;
-    
-    // Binary search for first start > i_rend
-    auto it = upper_bound(starts.begin(), starts.end(),
-                          make_pair(i_rend, INT_MAX));
-    int limit = it - starts.begin();
-    
-    for (int si = 0; si < limit; si++) {
-      int j = starts[si].second;
-      if (j <= i) continue;
-      
-      // Complete overlap check: rend must span back past i.lend
-      if (alignments[j].get_coords().rend < i_lend) continue;
-      
-      if (DEBUG) { cout << "can merge " << i << " to " << j << " ?" << endl; }
-      if (canMerge(alignments[i], alignments[j])) {
+  {
+    vector<pair_compat> local;
+
 #ifdef _OPENMP
-#pragma omp critical
+#pragma omp for schedule(dynamic, 16) nowait
 #endif
-        {
-        compatibilities[i].push_back(j);
-        compatibilities[j].push_back(i);
-        if (encapsulates(alignments[i],alignments[j])) {
-          if (DEBUG) { cout << "alignment " << i << " encapsulates " << j << endl; }
-          encapsulations[i].push_back(j);
-        }
-        if (encapsulates(alignments[j],alignments[i])) {
-          if (DEBUG) { cout << "alignment " << j << " encapsulates " << i << endl; }
-          encapsulations[j].push_back(i);
-        }
+    for (int i = 0; i < num_alignments; i++) {
+
+      int i_rend = alignments[i].get_coords().rend;
+
+      for (int j = i + 1; j < num_alignments; j++) {
+
+        if (alignments[j].get_coords().lend > i_rend) break;
+
+        if (DEBUG) { cout << "can merge " << i << " to " << j << " ?" << endl; }
+        if (canMerge(alignments[i], alignments[j])) {
+          pair_compat rec;
+          rec.i = i;
+          rec.j = j;
+          rec.i_encapsulates_j = encapsulates(alignments[i], alignments[j]);
+          rec.j_encapsulates_i = encapsulates(alignments[j], alignments[i]);
+          local.push_back(rec);
         }
       }
     }
+
+#ifdef _OPENMP
+#pragma omp critical
+#endif
+    found.insert(found.end(), local.begin(), local.end());
   }
-  
-  // Sort and deduplicate each row for binary-search-based lookups
+
+  for (size_t k = 0; k < found.size(); k++) {
+    const pair_compat& rec = found[k];
+    compatibilities[rec.i].push_back(rec.j);
+    compatibilities[rec.j].push_back(rec.i);
+    if (rec.i_encapsulates_j) {
+      if (DEBUG) { cout << "alignment " << rec.i << " encapsulates " << rec.j << endl; }
+      encapsulations[rec.i].push_back(rec.j);
+    }
+    if (rec.j_encapsulates_i) {
+      if (DEBUG) { cout << "alignment " << rec.j << " encapsulates " << rec.i << endl; }
+      encapsulations[rec.j].push_back(rec.i);
+    }
+  }
+
+  // Rows must be in ascending index order: Fscan/Rscan tie-breaking depends on
+  // the traversal order, and the containment lookups are binary searches.
   for (int i = 0; i < num_alignments; i++) {
     sort(compatibilities[i].begin(), compatibilities[i].end());
-    compatibilities[i].erase(unique(compatibilities[i].begin(), compatibilities[i].end()), compatibilities[i].end());
     sort(encapsulations[i].begin(), encapsulations[i].end());
-    encapsulations[i].erase(unique(encapsulations[i].begin(), encapsulations[i].end()), encapsulations[i].end());
   }
 }
 
@@ -696,8 +727,9 @@ CDNA_alignment CDNA_alignment_assembler::create_assembly(vector<int> Alignment_i
   for (int i = 1; i < (int)Alignment_index_listing.size(); i++) {
     alignment_index = Alignment_index_listing[i];
     CDNA_alignment& nextAlignment = alignments[alignment_index];
-    CDNA_alignment newAssembly = mergeAlignments(assembly, nextAlignment);
-    assembly = newAssembly;
+    // move-assign straight from the returned temporary: the intermediate
+    // assemblies are discarded, and copying them is O(k^2) in segments.
+    assembly = mergeAlignments(assembly, nextAlignment);
   }
   
   return (assembly);

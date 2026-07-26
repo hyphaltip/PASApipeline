@@ -14,7 +14,7 @@ CDNA_alignment::CDNA_alignment (vector<Alignment_segment> incomingSegs, char ori
   // constructor 
   init(this);
   this->orient = orient;
-  this->alignment_segs = incomingSegs;
+  this->alignment_segs = std::move(incomingSegs);
   this->refineAlignment();
 
 }
@@ -28,12 +28,10 @@ void CDNA_alignment::init(CDNA_alignment* alignment) {
 }
 
 
-bool segmentSortCriteria (Alignment_segment a1, Alignment_segment a2) {
-  if (a1.get_coords().lend <= a2.get_coords().lend) {
-    return (true);
-  } else {
-    return (false);
-  }
+/* must be a strict weak ordering (< and not <=), or std::sort has undefined
+   behavior on equal lend positions. */
+bool segmentSortCriteria (const Alignment_segment& a1, const Alignment_segment& a2) {
+  return (a1.get_coords().lend < a2.get_coords().lend);
 }
 
 
@@ -54,19 +52,19 @@ void CDNA_alignment::refineAlignment() {
   num_segments = seglist.size();
   // classify each segment according to type.
   if (num_segments == 1) {
-    seglist[0].type = "single";
+    seglist[0].type = SEGMENT_SINGLE;
   } else {
     for (int i=0; i < num_segments; i++) {
       Alignment_segment& seg = seglist[i];
       if (i == 0) {
-	seg.type = "first";
+	seg.type = SEGMENT_FIRST;
 	seg.set_right_splice_junction(true);
       } else if (i == num_segments-1) {
-	seg.type = "last";
+	seg.type = SEGMENT_LAST;
 	seg.set_left_splice_junction(true);
       } else {
 	// must be internal
-	seg.type = "internal";
+	seg.type = SEGMENT_INTERNAL;
 	seg.set_left_splice_junction(true);
 	seg.set_right_splice_junction(true);
       }
@@ -104,7 +102,7 @@ const struct coordset& CDNA_alignment::get_coords() const {
 }
 
 void CDNA_alignment::add_alignment_segment (Alignment_segment as) {
-  this->alignment_segs.push_back(as);
+  this->alignment_segs.push_back(std::move(as));
 }
 
 vector<Alignment_segment>& CDNA_alignment::get_alignment_segments() {
@@ -154,14 +152,14 @@ string CDNA_alignment::toAlignIllustration (int subtract, int rel_max, int lineL
     // add left splice indicator
     if (seg.get_left_splice_junction()) {
       token[l_rel] = '<';
-    } else if (seg.type != "first" && seg.type != "single") {
+    } else if (seg.type != SEGMENT_FIRST && seg.type != SEGMENT_SINGLE) {
       token[l_rel] = '|';
     }
     
     // add right splice indicator
     if (seg.get_right_splice_junction()) {
       token[r_rel] = '>';
-    } else if (seg.type != "last" && seg.type != "single") {
+    } else if (seg.type != SEGMENT_LAST && seg.type != SEGMENT_SINGLE) {
       token[r_rel] = '|';
     }
   }

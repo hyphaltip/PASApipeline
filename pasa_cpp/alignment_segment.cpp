@@ -19,7 +19,7 @@ Alignment_segment::Alignment_segment(struct coordset& coords) {
 
 
 void Alignment_segment::init() {
-  this->type = "?";
+  this->type = SEGMENT_UNKNOWN;
   this->has_left_splice_junction = false;
   this->has_right_splice_junction = false;
 }
@@ -28,17 +28,22 @@ void Alignment_segment::init() {
 struct coordset& Alignment_segment::get_coords() {
   return (this->coords);
 }
-  
+
+const struct coordset& Alignment_segment::get_coords() const {
+  return (this->coords);
+}
+
+
 void Alignment_segment::set_coords (int lend, int rend) {
   coords.lend = lend;
   coords.rend = rend;
 }
 
-void Alignment_segment::set_type (string t) {
+void Alignment_segment::set_type (segment_type t) {
   type = t;
 }
 
-string Alignment_segment::get_type () {
+segment_type Alignment_segment::get_type () {
   return (type);
 }
 

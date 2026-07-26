@@ -66,15 +66,18 @@ sub build_clusters {
     system "touch $clusterfile";
     unless (-w $clusterfile) { die "Can't write $clusterfile";}
     
-    ## Prefer C++ slclust (faster at all tested scales)
-    ## Fall back to slclust_rust (iterative DFS, no ulimit needed)
+    ## Prefer slclust_rust: 3-9x faster than C++ slclust at every scale tested
+    ## (plain clustering and Jaccard filtering alike), deterministic output,
+    ## and no stack-depth limit to worry about. Fall back to C++ slclust if
+    ## slclust_rust isn't installed. Set SLCLUST_BACKEND=cpp to force C++.
     my $cmd;
-    if ($SLCLUST && -x $SLCLUST) {
-        $cmd = "ulimit -s unlimited 2>/dev/null; $SLCLUST < $pairfile > $clusterfile";
-    } elsif ($SLCLUST_RUST && -x $SLCLUST_RUST) {
+    my $force_cpp = ($ENV{SLCLUST_BACKEND} || '') eq 'cpp';
+    if ($SLCLUST_RUST && -x $SLCLUST_RUST && !$force_cpp) {
         $cmd = "$SLCLUST_RUST < $pairfile > $clusterfile";
+    } elsif ($SLCLUST && -x $SLCLUST) {
+        $cmd = "ulimit -s unlimited 2>/dev/null; $SLCLUST < $pairfile > $clusterfile";
     } else {
-        die "ERROR: Neither slclust nor slclust_rust found in PATH";
+        die "ERROR: Neither slclust_rust nor slclust found in PATH";
     }
     
     my $ret = system ($cmd);
