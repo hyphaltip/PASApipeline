@@ -67,44 +67,5 @@ bool overlap (struct coordset& a, struct coordset& b) {
 }
 
 
-int** twoDarray (int x, int y) {
-  
-  // make array x rows and y columns
-  int** int2D = new int*[x];
-  for (int i = 0; i < y; i++) {
-    int2D[i] = new int[y];
-    // init entries to zero
-    for (int j = 0; j < y; j++) {
-      int2D[i][j] = 0;
-    }
-  }
-
-  return (int2D);
-}
- 
-bool** twoDarray (int x, int y, bool init) {
-  
-  bool** twoD = new bool*[x];
-  for (int i = 0; i < y; i++) {
-    twoD[i] = new bool[y];
-    // init values to init
-    for (int j=0; j < y; j++) {
-      twoD[i][j] = init;
-    }
-  }
-  
-  return (twoD);
-
-}
-   
-
-void free2Darray (int** twoD) {
-  // No longer used by cdna_alignment_assembler (now uses sparse adjacency lists).
-}
-
-void free2Darray (bool** twoD) {
-  // No longer used by cdna_alignment_assembler (now uses sparse adjacency lists).
-}
-
 
 
