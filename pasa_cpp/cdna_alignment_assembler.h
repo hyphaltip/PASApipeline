@@ -6,7 +6,7 @@
 #include "alignment_segment.h"
 #include <string>
 #include <vector>
-#include <unordered_set>
+#include <algorithm>
 
 using namespace std;
 
@@ -52,8 +52,8 @@ class CDNA_alignment_assembler {
   vector<int> unique_entries(vector<vector<int> >);
   void populateLobjects();
   
-  vector<unordered_set<int>> compatibilities;
-  vector<unordered_set<int>> encapsulations;
+  vector<vector<int>> compatibilities;
+  vector<vector<int>> encapsulations;
   int num_alignments;
   
   Lobject* get_max_missing_Lobj(vector<Lobject*>&, vector<bool>&);

@@ -470,7 +470,8 @@ void CDNA_alignment_assembler::do_full_Fscan() {
     for (int j : compatibilities[i]) {
       if (j >= i) continue;
       
-      bool containment =  encapsulations[i].count(j) || encapsulations[j].count(i);
+      bool containment =  binary_search(encapsulations[i].begin(), encapsulations[i].end(), j)
+                       || binary_search(encapsulations[j].begin(), encapsulations[j].end(), i);
       
       if (containment) continue;
       
@@ -502,7 +503,8 @@ void CDNA_alignment_assembler::do_full_Rscan() {
     for (int j : compatibilities[i]) {
       if (j <= i) continue;
       
-      bool containment =  encapsulations[i].count(j) || encapsulations[j].count(i);
+      bool containment =  binary_search(encapsulations[i].begin(), encapsulations[i].end(), j)
+                       || binary_search(encapsulations[j].begin(), encapsulations[j].end(), i);
       if (containment) continue;
       
       int curr_total_score = Lobjects[j].LscoreR + Lobj.num_unique_contained(Lobjects[j]);
@@ -579,21 +581,28 @@ void CDNA_alignment_assembler::determine_compatibilities_and_encapsulations() {
 #pragma omp critical
 #endif
         {
-        compatibilities[i].insert(j);
-        compatibilities[j].insert(i);
+        compatibilities[i].push_back(j);
+        compatibilities[j].push_back(i);
         if (encapsulates(alignments[i],alignments[j])) {
           if (DEBUG) { cout << "alignment " << i << " encapsulates " << j << endl; }
-          encapsulations[i].insert(j);
+          encapsulations[i].push_back(j);
         }
         if (encapsulates(alignments[j],alignments[i])) {
           if (DEBUG) { cout << "alignment " << j << " encapsulates " << i << endl; }
-          encapsulations[j].insert(i);
+          encapsulations[j].push_back(i);
         }
         }
       }
     }
   }
   
+  // Sort and deduplicate each row for binary-search-based lookups
+  for (int i = 0; i < num_alignments; i++) {
+    sort(compatibilities[i].begin(), compatibilities[i].end());
+    compatibilities[i].erase(unique(compatibilities[i].begin(), compatibilities[i].end()), compatibilities[i].end());
+    sort(encapsulations[i].begin(), encapsulations[i].end());
+    encapsulations[i].erase(unique(encapsulations[i].begin(), encapsulations[i].end()), encapsulations[i].end());
+  }
 }
 
 
