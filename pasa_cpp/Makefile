@@ -19,9 +19,18 @@ BINDIR = .
 #CFLAGS = -O3 -m64 -mtune=opteron -march=opteron -mfpmath=sse 
 
 # for everything else
-CXX = g++
-CFLAGS = -O3 -march=native -flto -funroll-loops -fopenmp -std=c++11
-LDFLAGS = -flto -fopenmp
+CXX ?= g++
+
+# -msse4.2 is what actually matters here: it is what turns __builtin_popcountll
+# into a POPCNT instruction instead of a libgcc __popcountdi2 call.  SSE4.2 is
+# present on everything since Nehalem/Bulldozer (~2009), so the binary stays
+# portable across a heterogeneous cluster and across conda/container hosts.
+# -mtune=native only changes scheduling, never the instruction set, so it is
+# safe to combine.  Override ARCHFLAGS=-march=native for a single-machine build.
+ARCHFLAGS ?= -msse4.2 -mtune=native
+
+CFLAGS = -O3 $(ARCHFLAGS) -flto -funroll-loops -fopenmp -std=c++11
+LDFLAGS = -O3 $(ARCHFLAGS) -flto -fopenmp
 
 
 DEPEND_FILES = *.cpp *.c *.h
