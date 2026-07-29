@@ -17,7 +17,7 @@ use File::Basename;
 
 
 #my $VERSION = "__BLEEDING_EDGE__";
-my $VERSION = "2.6.0";
+my $VERSION = "2.6.0_rust";
 
 $ENV{PATH} = "$FindBin::Bin/bin:$ENV{PATH}";
 
