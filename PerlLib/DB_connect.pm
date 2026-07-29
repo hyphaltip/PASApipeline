@@ -38,6 +38,12 @@ my $SQLITE_BUSY_ERRSTR_RE = qr/database is locked|SQLITE_BUSY/i;
 ## (cluster/align_link lookups) resident instead of round-tripping to disk.
 our $SQLITE_CACHE_SIZE_KB = 64000;
 
+## reconnect_to_server() retry policy. Previously it looped forever with a
+## 30s sleep, so an actually-down server hung the pipeline indefinitely with
+## no diagnostic; now it gives up and reports.
+our $RECONNECT_MAX_ATTEMPTS = 10;
+our $RECONNECT_RETRY_SLEEP_SECONDS = 30;
+
 ############### DATABASE CONNECTIVITY ################################
 ####
 
@@ -143,25 +149,56 @@ sub get_dbh {
 
 
 ####
+## Guard against "MySQL server has gone away" during long-running work.
+##
+## This used to rebuild the connection unconditionally on every call, which is
+## expensive in the way that matters most: callers invoke it defensively inside
+## hot loops. assemble_clusters.dbi calls it once per cluster -- ~16k times on
+## a fungal genome -- so every iteration paid a full TCP connect + auth AND,
+## worse, silently discarded the statement cache, since prepare_cached is keyed
+## to the $dbh being replaced. That defeated the prepare_cached and batch-fetch
+## work in the pipeline's single hottest script.
+##
+## Now the live connection is kept unless it is actually dead. ping() is a
+## lightweight round trip (COM_PING on MySQL) that costs microseconds and, in
+## the overwhelmingly common case where the connection is fine, preserves both
+## the connection and its prepared-statement cache.
 sub reconnect_to_server {
     my ($dbproc) = @_;
 
     return $dbproc if $dbproc->{dbh}->{Driver}->{Name} eq 'SQLite'; # shouldn't be needed for SQLite
 
-    my $new_dbh;
-    
-    do {
+    ## Fast path: connection still alive, keep it (and its statement cache).
+    if ($dbproc->{dbh}) {
+        my $alive = eval { $dbproc->{dbh}->ping };
+        return ($dbproc) if $alive;
+    }
+
+    ## Slow path: the connection really is gone, so rebuild it.
+    my $new_dbproc;
+    my $attempts = 0;
+
+    while (! $new_dbproc) {
+        $attempts++;
         eval {
-            $new_dbh = &connect_to_db($dbproc->{__server},  $dbproc->{__db}, $dbproc->{__username}, $dbproc->{__password});
+            $new_dbproc = &connect_to_db($dbproc->{__server},  $dbproc->{__db}, $dbproc->{__username}, $dbproc->{__password});
         };
         if ($@) {
-            $new_dbh = undef;
-            sleep(30);
+            my $err = $@;
+            $new_dbproc = undef;
+            if ($attempts >= $RECONNECT_MAX_ATTEMPTS) {
+                confess "Error, cannot reconnect to $dbproc->{__db} on $dbproc->{__server} "
+                      . "after $attempts attempts: $err";
+            }
+            sleep($RECONNECT_RETRY_SLEEP_SECONDS);
         }
-    } until ($new_dbh);
-    
-    $dbproc->{dbh} = $new_dbh->{dbh};
-    
+    }
+
+    ## Drop the dead handle explicitly rather than leaving it to refcounting.
+    eval { $dbproc->{dbh}->disconnect } if $dbproc->{dbh};
+
+    $dbproc->{dbh} = $new_dbproc->{dbh};
+
     return ($dbproc);
 }
 
