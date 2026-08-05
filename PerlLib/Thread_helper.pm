@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Carp;
 use threads;
+use Time::HiRes qw(sleep);
 
 =synopsis
 
@@ -54,7 +55,11 @@ BEGIN {
 }
 
 
-my $SLEEPTIME = 1;
+## wait_for_open_thread() polls at this granularity while all thread slots
+## are busy. This used to be a full second, which is fine for long-running
+## threads but wastes real wall time (CPU sits idle, waiting on the clock)
+## for scripts that dispatch many short-lived threads.
+my $SLEEPTIME = 0.1;
 
 our $THREAD_MONITORING = 0; # set to 1 to watch thread management
 

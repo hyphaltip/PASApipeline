@@ -15,7 +15,7 @@ use Storable qw (nstore);
 use Getopt::Std;
 use File::Basename;
 use threads;
-use Thread_helper;
+use Thread::Queue;
 use Carp;
 use Fasta_retriever;
 
@@ -121,52 +121,74 @@ else {
 main: {
     my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password);
     $dbproc = &DB_connect::reconnect_to_server($dbproc); #just for the fun of it
-    
-    
+
+
     my $query = "select distinct annotdb_asmbl_id from clusters";
     my @asmbl_ids;
     my @results = &DB_connect::do_sql_2D($dbproc, $query);
     foreach my $result_aref (@results) {
         push (@asmbl_ids, $result_aref->[0]);
     }
-    
-    my $thread_helper = new Thread_helper($NUM_THREADS);
-    
-    foreach my $asmbl_id (@asmbl_ids) {
-        
-        if ($contigs_already_processed{$asmbl_id}) {
-            next;
-        }
-                        
-        my $thread = threads->create('assemble_transcripts_on_scaffold', $asmbl_id);
-        
-        $thread_helper->add_thread($thread);
 
-    }
-    
-    $thread_helper->wait_for_all_threads_to_complete();
-    
     $dbproc->disconnect;
 
+    ## Fixed-size worker pool pulling contigs off a shared queue, instead of
+    ## one short-lived thread per contig (as this used to do). A genome with
+    ## thousands of small contigs was spawning thousands of ithreads -- each
+    ## cloning the whole interpreter and opening its own fresh MySQL
+    ## connection -- for a handful of clusters' worth of real work apiece,
+    ## which dominated wall time over the actual assembly work and left CPUs
+    ## idle waiting on thread-create/connect/join overhead. This way each
+    ## worker clones the interpreter and connects once, then works through
+    ## as many contigs as it's handed.
+    my $work_queue = Thread::Queue->new(grep { ! $contigs_already_processed{$_} } @asmbl_ids);
+    $work_queue->end();
 
-    my @failed_threads = $thread_helper->get_failed_threads();
-    if (@failed_threads) {
-        die "Error, " . scalar(@failed_threads) . " threads failed.\n";
+    my @workers;
+    for (1..$NUM_THREADS) {
+        push (@workers, threads->create('assemble_transcripts_worker', $work_queue));
+    }
+
+    my $num_failed = 0;
+    foreach my $worker (@workers) {
+        $worker->join();
+        if (my $error = $worker->error()) {
+            print STDERR "ERROR, thread " . $worker->tid() . " failed: $error\n";
+            $num_failed++;
+        }
+    }
+
+    if ($num_failed) {
+        die "Error, $num_failed threads failed.\n";
         exit(1);
     }
     else {
         print STDERR "processes completed successfully.\n";
         exit(0);
     }
-    
+
+}
+
+
+####
+sub assemble_transcripts_worker {
+    my ($work_queue) = @_;
+
+    my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password); # one connection per worker, reused across contigs
+
+    while (defined(my $asmbl_id = $work_queue->dequeue())) {
+        $dbproc = &assemble_transcripts_on_scaffold($dbproc, $asmbl_id);
+    }
+
+    $dbproc->disconnect;
+
+    return;
 }
 
 
 ####
 sub assemble_transcripts_on_scaffold {
-    my ($asmbl_id) = @_;
-    
-    my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password); # refresh it per thread
+    my ($dbproc, $asmbl_id) = @_;
 
     my @all_assemblies;
     my $sequence = $fasta_retriever->get_seq($asmbl_id); #&Ath1_cdnas::get_seq_from_fasta ($asmbl_id, $genomic_seq_db);
@@ -253,8 +275,8 @@ sub assemble_transcripts_on_scaffold {
         print $ofh $acc . "\t" . $assembly->toToken() . "\n";
     }
     close $ofh;
-    
-    return;
+
+    return $dbproc;
 }
 
 ####
