@@ -46,6 +46,31 @@ our \$FASTAPATH = /full/path/to/fasta
 our $FASTAPATH = "";
 our $SEE;
 
+my $cached_fasta_prog;  ## memoized path to the fasta-family executable
+
+## Resolve the path to a fasta-family executable (fasta / fasta36 / fasta3),
+## caching the result so we only pay the `which` cost once per process.
+sub _resolve_fasta_prog {
+    return $cached_fasta_prog if $cached_fasta_prog;
+
+    if ($FASTAPATH) {
+        die "Cannot find program fasta (FASTAPATH=$FASTAPATH)\n" unless -s $FASTAPATH && -x $FASTAPATH;
+        $cached_fasta_prog = $FASTAPATH;
+        return $cached_fasta_prog;
+    }
+
+    for my $progname (qw (fasta fasta36 fasta3)) {
+        my $prog = `which $progname 2>/dev/null`;
+        chomp $prog;
+        if ($prog && -s $prog && -x $prog) {
+            $cached_fasta_prog = $prog;
+            return $cached_fasta_prog;
+        }
+    }
+
+    die "Cannot find program fasta\n";
+}
+
 ####
 sub perform_fasta_align {
     my $seq1 = shift;
@@ -67,11 +92,7 @@ sub perform_fasta_align {
 	
     my $result_file = "/tmp/$tmp_token.grasta_result";
     
-    my $prog = `which fasta`;chomp($prog);
-    if ($FASTAPATH) {
-		$prog = $FASTAPATH;
-    }
-    die "Cannot find program fasta\n" unless $prog && -s $prog && -x $prog;
+    my $prog = &_resolve_fasta_prog();
     
     my $cmd = "$prog $file1 $file2 > $result_file";
     my $ret = system ($cmd);
