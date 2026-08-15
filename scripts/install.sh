@@ -161,6 +161,16 @@ if [ -d "${PASA_ROOT}/PerlLib" ]; then
     cp -r "${PASA_ROOT}/PerlLib" "${SRC_DIR}/" || true
 fi
 
+# Copy SAMPLE_HOOKS (annotation-loader hook modules, e.g. GFF3::GFF3_annot_retriever,
+# GTF::Gtf_annot_retriever) -- referenced at runtime via HOOK_PERL_LIBS=__PASAHOME__/SAMPLE_HOOKS
+# in pasa_conf/conf.txt, but never installed without this copy. Without it,
+# `funannotate update`'s PASA annotation-comparison step (Load_Current_Gene_Annotations.dbi)
+# dies with "Error, couldn't resolve path for GFF3::GFF3_annot_retriever" the moment it's
+# given a .gff3 annotation file (its default/only supported case).
+if [ -d "${PASA_ROOT}/SAMPLE_HOOKS" ]; then
+    cp -r "${PASA_ROOT}/SAMPLE_HOOKS" "${SRC_DIR}/" || true
+fi
+
 # Copy pipeline scripts and config
 if [ -f "${PASA_ROOT}/Launch_PASA_pipeline.pl" ]; then
     cp "${PASA_ROOT}/Launch_PASA_pipeline.pl" "${SRC_DIR}/"
