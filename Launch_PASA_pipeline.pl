@@ -17,7 +17,7 @@ use File::Basename;
 
 
 #my $VERSION = "__BLEEDING_EDGE__";
-my $VERSION = "2.6.0_rust";
+my $VERSION = "2.6.1-rc.1+rust";
 
 $ENV{PATH} = "$FindBin::Bin/bin:$ENV{PATH}";
 
@@ -687,7 +687,7 @@ if ($RUN_PIPELINE) {
                   params => "-M '$database' -f -A -P ${map_program} -B ",
                   input => undef,
                   output => "$DBname.failed_${map_program}_alignments.bed",
-                  chkpt => "$DBname.failed_${map_program}_alignments.gff3.ok",
+                  chkpt => "$DBname.failed_${map_program}_alignments.bed.ok",
                   compress_files => ["$DBname.failed_${map_program}_alignments.bed"],
               },
               
@@ -700,54 +700,6 @@ if ($RUN_PIPELINE) {
                   chkpt => "$DBname.failed_${map_program}_alignments.gtf.ok",
                   compress_files => ["$DBname.failed_${map_program}_alignments.gtf"],
               },
-              
-              # do again, but write in BED format
-              { 
-                  prog => "$UTILDIR/PASA_transcripts_and_assemblies_to_GFF3.dbi",
-                  params => "-M '$database' -v -A -P ${map_program} -B ",
-                  input => undef,
-                  output => "$DBname.valid_${map_program}_alignments.bed",
-                  chkpt => "$DBname.valid_${map_program}_alignments.bed.ok",
-              },
-
-              # do again, but write in GTF format
-              { 
-                  prog => "$UTILDIR/PASA_transcripts_and_assemblies_to_GFF3.dbi",
-                  params => "-M '$database' -v -A -P ${map_program} -T ",
-                  input => undef,
-                  output => "$DBname.valid_${map_program}_alignments.gtf",
-                  chkpt => "$DBname.valid_${map_program}_alignments.gtf.ok",
-              },
-              
-              
-              # write the gff3 file describing the failures:
-              { 
-                  prog => "$UTILDIR/PASA_transcripts_and_assemblies_to_GFF3.dbi",
-                  params => "-M '$database' -f -A -P ${map_program}",
-                  input => undef,
-                  output => "$DBname.failed_${map_program}_alignments.gff3",
-                  chkpt => "$DBname.failed_${map_program}_alignments.gff3.ok",
-              },
-              
-              # do again, but write in BED format
-              { 
-                  prog => "$UTILDIR/PASA_transcripts_and_assemblies_to_GFF3.dbi",
-                  params => "-M '$database' -f -A -P ${map_program} -B ",
-                  input => undef,
-                  output => "$DBname.failed_${map_program}_alignments.bed",
-                  chkpt => "$DBname.failed_${map_program}_alignments.gff3.ok",
-              },
-              
-              # do again, but write in BED format
-              { 
-                  prog => "$UTILDIR/PASA_transcripts_and_assemblies_to_GFF3.dbi",
-                  params => "-M '$database' -f -A -P ${map_program} -T ",
-                  input => undef,
-                  output => "$DBname.failed_${map_program}_alignments.gtf",
-                  chkpt => "$DBname.failed_${map_program}_alignments.gtf.ok",
-              },
-              
-              
             );
         
     }
