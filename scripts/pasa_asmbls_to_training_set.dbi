@@ -29,13 +29,22 @@ my $usage =  <<_EOH_;
 #
 # -m <int>                             minimum protein length (default: 100)
 #
-# -G <string>                          genetic code (default: universal, options: Euplotes, Tetrahymena, Candida, Acetabularia)
+# -G <string>                          genetic code, per TransDecoder's naming (default: Universal, options: Universal,
+#                                       Tetrahymena, Acetabularia, Ciliate, Dasycladacean, Hexamita, Candida, Euplotid,
+#                                       SR1_Gracilibacteria, Pachysolen_tannophilus, Mesodinium, Peritrich, and the
+#                                       Mitochondrial-* codes; NOTE: this is not the same code list as PASA's own
+#                                       Nuc_translator.pm, which uses "Euplotes" instead of "Euplotid")
 #
 # -h print this option menu and quit
 # -v verbose
 #
 # -S                                   strand-specific (only analyzes top strand)
 # -T <int>                             top longest ORFs to train Markov Model (hexamer stats) (default: 500)
+#
+# -N                                   skip TransDecoder's start-codon PWM refinement (--no_refine_starts).
+#                                       Needed for small transcript sets: with too few top-scoring ORFs on a
+#                                       given strand (e.g. only 1), TransDecoder's leave-one-out PWM training
+#                                       dies with "pwm length = 0" instead of skipping gracefully.
 #
 #
 ###################### Process Args and Options #####################
@@ -50,7 +59,7 @@ my ($pasa_transcripts_fasta_file, $pasa_transcripts_gff3_file);
 
 
 # optional
-my ($min_prot_length, $genetic_code, $help, $verbose, $strand_specific_flag, $top_long_orfs);
+my ($min_prot_length, $genetic_code, $help, $verbose, $strand_specific_flag, $top_long_orfs, $no_refine_starts);
 
 my $DEBUG = 0; # just prints commands, doesnt execute anything
 
@@ -62,6 +71,7 @@ my $DEBUG = 0; # just prints commands, doesnt execute anything
              'v' =>\$verbose,
              'S' => \$strand_specific_flag,
              'T=i' => \$top_long_orfs,
+             'N' => \$no_refine_starts,
              'd' => \$DEBUG);
 
 
@@ -170,6 +180,9 @@ main: {
     }
 
     $cmd = "$transdecoder_predict $transdecoder_params";
+    if ($no_refine_starts) {
+        $cmd .= " --no_refine_starts ";
+    }
     &process_cmd($cmd);
 
     
