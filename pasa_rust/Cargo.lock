@@ -4,12 +4,12 @@ version = 4
 
 [[package]]
 name = "cdbtools"
-version = "2.5.3"
+version = "2.6.1"
 
 [[package]]
 name = "pasa-assembler"
-version = "2.5.3"
+version = "2.6.1"
 
 [[package]]
 name = "slclust"
-version = "2.5.3"
+version = "2.6.1"
