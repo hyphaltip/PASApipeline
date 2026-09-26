@@ -27,3 +27,10 @@ bench_results/
 logs/
 *.sqlite
 *.sqlite.unverified
+
+# seqclean plugin build outputs (built in place by make)
+pasa-plugins/seqclean/mdust/mdust
+pasa-plugins/seqclean/psx/psx
+pasa-plugins/seqclean/trimpoly/trimpoly
+pasa-plugins/seqclean/seqclean/err_log
+pasa-plugins/seqclean/seqclean/log_std
