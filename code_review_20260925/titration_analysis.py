@@ -88,6 +88,8 @@ def main():
             val = f1(r[sn_col], r[pr_col])
             if r["N"] == "busco":
                 busco[r["genome"]].append(val)
+            elif not r["N"].isdigit():
+                continue  # reference rows such as N="busco_code_new" are not comparators
             else:
                 pasa[r["genome"]][int(r["N"])].append(val)
                 rows_by_genome[r["genome"]].append(r)
