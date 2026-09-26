@@ -11,10 +11,11 @@ use SingleLinkageClusterer;
 use Overlap_piler;
 use threads;
 use Thread_helper;
+use Unspliced_orient_join;
 
-use vars qw ($opt_V $opt_M $opt_p $opt_d $opt_h $opt_v $opt_L $opt_T);
+use vars qw ($opt_V $opt_M $opt_p $opt_d $opt_h $opt_v $opt_L $opt_T $opt_U);
 
-&getopts ('M:dhvV:L:T:');
+&getopts ('M:dhvV:L:T:U');
 
 
 $|=1;
@@ -28,6 +29,10 @@ my $usage =  <<_EOH_;
 # -M database name
 # 
 # -L min percent of shorter length for linking pairs. (default: 30%)
+#
+# -U (opt-in) let an unspliced alignment (spliced_orient '?') join the
+#    orientation partition of the spliced alignments covering >= L% of it,
+#    when all of them share one orientation (see PerlLib/Unspliced_orient_join.pm)
 #
 # -d Debug
 # -h print this option menu and quit
@@ -69,7 +74,7 @@ my ($dbproc) = &DB_connect::connect_to_db($MYSQLserver,$MYSQLdb,$user,$password)
 print STDERR "// retrieving valid alignments.\n";
 
 # get the list of annot-db asmbl_id and corresponding cdna_accs
-my $query = "select c.annotdb_asmbl_id, al.align_acc, al.spliced_orient "
+my $query = "select c.annotdb_asmbl_id, al.align_acc, al.spliced_orient, al.lend, al.rend "
     . " from clusters c, align_link al, cdna_info ci "
     . " where c.cluster_id = al.cluster_id and al.cdna_info_id = ci.id "
     . " and ci.is_assembly = 0 and al.validate = 1";
@@ -77,9 +82,20 @@ my $query = "select c.annotdb_asmbl_id, al.align_acc, al.spliced_orient "
 my %asmbl_id_to_cdna_accs;
 my @results = &do_sql_2D($dbproc, $query);
 
+my %unspliced_assigned;
+if ($opt_U) {
+    my @alns = map { { id => $_->[1], scaffold => $_->[0], orient => $_->[2],
+                       lend => $_->[3], rend => $_->[4] } } @results;
+    %unspliced_assigned = %{&Unspliced_orient_join::assign_unspliced_orientations(\@alns, $min_percent_shorter_length)};
+    print STDERR "// -U: " . scalar(keys %unspliced_assigned) . " unspliced alignments joined a spliced orientation partition.\n";
+}
+
 foreach my $result (@results) {
     my ($asmbl_id, $cdna_acc, $spliced_orient) = @$result;
 
+    if ($opt_U && exists $unspliced_assigned{$cdna_acc}) {
+        $spliced_orient = $unspliced_assigned{$cdna_acc};
+    }
 	$asmbl_id .= ";$spliced_orient";
 	
     if (my $aref = $asmbl_id_to_cdna_accs{$asmbl_id}) {

@@ -12,13 +12,14 @@ use CDNA::Genome_based_cDNA_assembler;
 use Gene_obj;
 use Ath1_cdnas;
 use SingleLinkageClusterer;
+use Unspliced_orient_join;
 use Fasta_retriever;
 use Getopt::Std;
 require "overlapping_nucs.ph";
 
-use vars qw ($opt_h $opt_D $opt_p $opt_d $DEBUG $opt_S $opt_M $opt_G $opt_m $opt_v $opt_R);
+use vars qw ($opt_h $opt_D $opt_p $opt_d $DEBUG $opt_S $opt_M $opt_G $opt_m $opt_v $opt_R $opt_U);
 
-&getopts ('hD:dS:M:G:m:vR:');
+&getopts ('hD:dS:M:G:m:vR:U');
 
 my $usage =  <<_EOH_;
 
@@ -34,6 +35,9 @@ Subclusters broken out of clusters to group together potential alt-splice variat
 #    For use by an external sharding driver dispatching one process per contig
 #    (see sharding/shard_subcluster_builder.sh); equivalent in spirit to
 #    cDNA_annotation_comparer.dbi's --RESTRICT_SINGLE_CONTIG.
+# -U (opt-in) let an unspliced assembly (spliced orientation '?') join the
+#    subcluster of spliced assemblies covering >= m% of it, when all of them
+#    share one orientation (see PerlLib/Unspliced_orient_join.pm)
 # -d Debug
 #
 # -h print this option menu and quit
@@ -162,6 +166,26 @@ foreach my $result (@results) {
         if ($#alignment_objs > 0) { #multiple assemblies in cluster
             
             my @pairs;
+            my %unspliced_assigned;
+            if ($opt_U) {
+                my @alns;
+                for (my $k = 0; $k <= $#alignment_objs; $k++) {
+                    my ($l, $r) = sort {$a<=>$b} $alignment_objs[$k]->get_coords();
+                    push (@alns, { id => $k, scaffold => 'cluster', lend => $l, rend => $r,
+                                   orient => $alignment_objs[$k]->get_spliced_orientation() });
+                }
+                %unspliced_assigned = %{&Unspliced_orient_join::assign_unspliced_orientations(\@alns, $MIN_PERCENT_OVERLAP)};
+                ## Store the assigned orientation on the unspliced assembly. Later
+                ## steps (alt-splice classification, subcluster loading) expect one
+                ## spliced orientation per subcluster and reject '?' in
+                ## splice_variation.orient.
+                foreach my $k (sort {$a<=>$b} keys %unspliced_assigned) {
+                    my $o = $unspliced_assigned{$k};
+                    &DB_connect::RunMod($dbproc, "update align_link set spliced_orient = ? where align_id = ?", $o, $assemblies[$k]);
+                    $alignment_objs[$k]->set_spliced_orientation($o);
+                    print "-U: assembly align_id $assemblies[$k] ('?') assigned spliced orientation $o\n";
+                }
+            }
             ## identify subclusters of relevant assemblies:
             for (my $i = 0; $i <= $#alignment_objs; $i++) {
                 my $ialign = $alignment_objs[$i];
@@ -176,7 +200,14 @@ foreach my $result (@results) {
                     my $j_spliced_orientation = $jalign->get_spliced_orientation();
                     
                     ## check for compatible spliced orientations.
-                    unless ($i_spliced_orientation eq $j_spliced_orientation) {
+                    if ($opt_U) {
+                        unless (&Unspliced_orient_join::orientations_compatible($i_spliced_orientation, $i,
+                                                                                $j_spliced_orientation, $j,
+                                                                                \%unspliced_assigned)) {
+                            next; # same orientation, or '?' assigned to the other's orientation
+                        }
+                    }
+                    elsif ($i_spliced_orientation ne $j_spliced_orientation) {
                         next; #must have same spliced orientation
                     }
                     

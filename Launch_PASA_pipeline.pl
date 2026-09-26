@@ -30,7 +30,8 @@ my ($opt_c, $opt_C, $opt_r, $opt_R, $opt_A, $opt_g, $opt_t, $opt_f, $opt_T, $opt
     $SIM4_CHASER, $genetic_code, $TRANSDECODER, @PRIMARY_ALIGNERS,
     $PASACONF, 
     $SHOW_VERSION_INFO,
-    $COMPRESS_INTERMEDIATES
+    $COMPRESS_INTERMEDIATES,
+    $UNSPLICED_JOIN_SPLICED, $ONE_ALIGNMENT_PER_CDNA
     );
 
 
@@ -60,6 +61,8 @@ my $CUFFLINKS_GTF;
               'h' => \$opt_h,
               'x' => \$opt_x,
               'INVALIDATE_SINGLE_EXON_ESTS' => \$INVALIDATE_SINGLE_EXON_ESTS,
+              'UNSPLICED_JOIN_SPLICED' => \$UNSPLICED_JOIN_SPLICED,
+              'ONE_ALIGNMENT_PER_CDNA' => \$ONE_ALIGNMENT_PER_CDNA,
               'IMPORT_CUSTOM_ALIGNMENTS_GFF3=s' => \$IMPORT_CUSTOM_ALIGNMENTS_GFF3,
               'USE_SPLICE_GRAPH_ASSEMBLER' => \$splice_graph_assembler_flag,
               'ascii_illustration' => \$ascii_illustration_flag,
@@ -176,6 +179,12 @@ my $usage =  <<_EOH_;
 #
 #
 # --INVALIDATE_SINGLE_EXON_ESTS    :invalidates single exon ests so that none can be built into pasa assemblies.
+# --UNSPLICED_JOIN_SPLICED   (opt-in) let an unspliced alignment (spliced orientation '?') join the
+#                            spliced alignments that cover it, when they all share one orientation:
+#                            in --stringent_alignment_overlap clustering and in subclustering.
+#                            Keeps single-exon fragments of spliced genes from becoming separate loci.
+# --ONE_ALIGNMENT_PER_CDNA   (opt-in) with more than one aligner (incl. custom), keep one valid alignment
+#                            per transcript per cluster, preferring spliced over unspliced, then score.
 #
 #
 # --transcribed_is_aligned_orient   flag for strand-specific RNA-Seq assemblies, the aligned orientation should correspond to the transcribed orientation.
@@ -773,7 +782,7 @@ if ($RUN_PIPELINE) {
 			  
 			  { 
 				  prog => "$UTILDIR/assign_clusters_by_stringent_alignment_overlap.dbi",
-				  params => "-M $database -L $STRINGENT_ALIGNMENT_OVERLAP -T $CPU", # require all alignments are valid here.
+				  params => "-M $database -L $STRINGENT_ALIGNMENT_OVERLAP -T $CPU" . ($UNSPLICED_JOIN_SPLICED ? " -U" : ""), # require all alignments are valid here.
 				  input => undef,
 				  output => "$PASA_LOG_DIR/cluster_reassignment_by_stringent_overlap.out",
                   chkpt => "cluster_reassign_stringent_overlap.ok",
@@ -783,6 +792,9 @@ if ($RUN_PIPELINE) {
 		
 	}
 	elsif ($GENE_OVERLAP) {
+		if ($UNSPLICED_JOIN_SPLICED) {
+			print STDERR "NOTE: --UNSPLICED_JOIN_SPLICED affects only subclustering with --gene_overlap clustering.\n";
+		}
 		
 		# define transcript overlap clusters based on mapping to overlapping annotated gene models (annotation-informed).
 		## transcripts in intergenic regions are clustered using the default method.
@@ -818,7 +830,8 @@ if ($RUN_PIPELINE) {
 	}
 
 
-    if ($NUM_TOP_ALIGNMENTS > 1 || scalar(@PRIMARY_ALIGNERS) == 0) {
+    if ($NUM_TOP_ALIGNMENTS > 1 || scalar(@PRIMARY_ALIGNERS) == 0
+        || ($ONE_ALIGNMENT_PER_CDNA && scalar(@PRIMARY_ALIGNERS) > 1)) {
 
         ## ensure only one valid alignment per cdna per cluster
         # (doesn't make sense to assemble a blat and gsnap alignment for the same cDNA.
@@ -827,7 +840,7 @@ if ($RUN_PIPELINE) {
         push (@cmds, 
               { 
                   prog => "$UTILDIR/ensure_single_valid_alignment_per_cdna_per_cluster.pl",
-                  params => "-M '$database'",
+                  params => "-M '$database'" . ($ONE_ALIGNMENT_PER_CDNA ? " -S" : ""),
                   input => undef,
                   output => "$PASA_LOG_DIR/ensuring_single_valid_alignment_per_cdna_per_cluster.log",
                   chkpt => "ensuring_single_valid_alignment_per_cdna_cluster.ok",
@@ -866,7 +879,7 @@ if ($RUN_PIPELINE) {
 		  # build the subclusters:
 		  {
 			  prog => "$UTILDIR/subcluster_builder.dbi",
-			  params => "-G $genome_db -M '$database' ",
+			  params => "-G $genome_db -M '$database' " . ($UNSPLICED_JOIN_SPLICED ? " -U" : ""),
 			  input => undef,
 			  output => "$PASA_LOG_DIR/alignment_assembly_subclustering.out",
               chkpt => "alignment_assembly_subclustering.ok",
