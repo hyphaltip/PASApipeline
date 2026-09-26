@@ -1,3 +1,57 @@
+############
+## Unreleased: fork branch fix/unspliced-orient-clustering (base 23d67c0 = v2.6.1). Not committed or merged yet.
+## Review and evidence: CODE_REVIEW_20260925.md; decision log
+## /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_pasa_rust_vs_perl/DECISIONS.md (D15, D18, D22, D26-D28, D31)
+
+- NEW, opt-in (off by default): Launch_PASA_pipeline.pl --UNSPLICED_JOIN_SPLICED   (R2, D18)
+  Problem: unspliced alignments have spliced orientation '?'. PASA clusters
+  (with --stringent_alignment_overlap) and subclusters by orientation, so a
+  single-exon fragment inside a spliced gene became a separate single-exon locus.
+  Change: a '?' alignment or assembly joins the spliced orientation that covers
+  at least L% of it (the stringent -L value for clustering, -m for
+  subclustering). This happens only when every covering spliced alignment has
+  the same orientation. When both orientations cover it, or none, it stays '?'.
+  Files:
+    PerlLib/Unspliced_orient_join.pm (new)
+    PerlLib/t/unspliced_orient_join.t (new; 14 tests)
+    scripts/assign_clusters_by_stringent_alignment_overlap.dbi (-U)
+    scripts/subcluster_builder.dbi (-U; stores the assigned orientation on the assembly)
+  Not covered: --gene_overlap clustering (a notice is printed) and
+  sharding/shard_subcluster_builder.sh (does not pass -U yet).
+
+- NEW, opt-in (off by default): Launch_PASA_pipeline.pl --ONE_ALIGNMENT_PER_CDNA   (F4, D18)
+  Problem: the one-alignment-per-transcript step
+  (ensure_single_valid_alignment_per_cdna_per_cluster.pl) ran only with -N > 1
+  or with no aligner. With blat/gmap plus custom alignments, every aligner's
+  alignment of a transcript was assembled; 4,505 N. crassa assemblies listed the
+  same transcript twice.
+  Change: the step also runs when more than one aligner is used, custom
+  included. With the new -S option it keeps a spliced alignment over an
+  unspliced one, then the higher score.
+  Files: Launch_PASA_pipeline.pl, scripts/ensure_single_valid_alignment_per_cdna_per_cluster.pl (-S)
+
+- FIX, active by default (user-approved exception to opt-in, D27/D28): gmap crash fallback   (D22)
+  Problem: gmap segfaults on some transcripts, for example a 290-bp tandem-repeat
+  contig in N. crassa, with gmap 2021-12-17, 2023-04-28 and 2025-07-31. One such
+  transcript killed PASA's whole gmap step.
+  Change: scripts/process_GMAP_alignments_gff3_chimeras_ok.pl writes gmap output
+  to a temp file. On success the output is the same as before; line order
+  already varies between gmap -t runs. Only on failure, and only for GFF3
+  output, it reruns in 500-transcript chunks, splits failing chunks down to
+  single transcripts, skips the ones that crash gmap, and lists them in
+  gmap.failed_transcripts.txt. SAM output still dies on error.
+  Root-cause work on gmap itself is in progress (D31).
+
+- Status (2026-09-25):
+  - Unit tests pass. Perl syntax checks pass in the funannotate rc.1 image.
+  - gmap fallback: verified on real data (297/298 contigs aligned; only the crashing contig skipped).
+  - R2 + F4 end-to-end runs: the first attempt failed (see below). Reruns are in progress.
+  - What went wrong on the way: the first R2 end-to-end runs died in
+    --ALT_SPLICE. classify_alt_splice_isoforms_per_subcluster.dbi inserted
+    orient '?' into splice_variation (CHECK constraint). subcluster_builder.dbi
+    -U now stores the assigned orientation. The syntax checks and unit tests had
+    not caught this; only the full run did.
+
 ##########3
 ## PASA release v2.5.3 June 1, 2023
 - various bugfixes

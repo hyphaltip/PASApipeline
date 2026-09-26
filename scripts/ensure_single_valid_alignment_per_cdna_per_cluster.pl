@@ -22,6 +22,9 @@ my $usage = <<__EOUSAGE__;
 #
 # -M <string>     database name
 #
+# -S              (opt-in) prefer a spliced alignment (num_segments > 1) over an
+#                 unspliced one before comparing scores
+#
 #
 ###############################################################################
 
@@ -31,8 +34,10 @@ __EOUSAGE__
     ;
 
 my $mysql_db;
+my $prefer_spliced = 0;
 
-&GetOptions("M=s" => \$mysql_db);
+&GetOptions("M=s" => \$mysql_db,
+             "S" => \$prefer_spliced);
 
 unless ($mysql_db) {
     die $usage;
@@ -50,7 +55,7 @@ if ($dbproc->{dbh}->{Driver}->{Name} ne 'SQLite') {
     &RunMod($dbproc, $query);
 }
 
-my $query = "select ci.cdna_acc, a.cluster_id, a.cdna_info_id, a.align_id, a.align_acc, a.prog, a.score "
+my $query = "select ci.cdna_acc, a.cluster_id, a.cdna_info_id, a.align_id, a.align_acc, a.prog, a.score, a.num_segments "
     . " from cdna_info ci, align_link a "
     . " where ci.id = a.cdna_info_id "
     . " and a.validate = 1 "
@@ -63,7 +68,7 @@ my %cluster_n_cdna_info;
 
 foreach my $result (@results) {
     
-    my ($cdna_acc, $cluster_id, $cdna_info_id, $align_id, $align_acc, $prog, $score) = @$result;
+    my ($cdna_acc, $cluster_id, $cdna_info_id, $align_id, $align_acc, $prog, $score, $num_segments) = @$result;
     
     my $token = join("$;", $cluster_id, $cdna_info_id);
     push (@{$cluster_n_cdna_info{$token}}, { 
@@ -72,6 +77,7 @@ foreach my $result (@results) {
         align_id => $align_id,
         prog => $prog,
         score => $score,
+        spliced => (($num_segments || 0) > 1) ? 1 : 0,
         cluster_id => $cluster_id,
     });
     
@@ -85,7 +91,12 @@ foreach my $collection_aref (values %cluster_n_cdna_info) {
     
     if (scalar @alignments > 1) {
         
-        @alignments = reverse sort {$a->{score}<=>$b->{score}} @alignments;
+        if ($prefer_spliced) {
+            @alignments = sort {$b->{spliced}<=>$a->{spliced} || $b->{score}<=>$a->{score}} @alignments;
+        }
+        else {
+            @alignments = reverse sort {$a->{score}<=>$b->{score}} @alignments;
+        }
         
         my $best_alignment = shift @alignments;
         
