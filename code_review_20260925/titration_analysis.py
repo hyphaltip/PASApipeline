@@ -72,7 +72,7 @@ def main():
     rnd = random.Random(a.seed)
     sn_col, pr_col = a.level + "_sn", a.level + "_pr"
 
-    busco = {}
+    busco = collections.defaultdict(list)
     pasa = collections.defaultdict(lambda: collections.defaultdict(list))
     rows_by_genome = collections.defaultdict(list)
     with open(a.scores) as fh:
@@ -87,31 +87,37 @@ def main():
                 continue
             val = f1(r[sn_col], r[pr_col])
             if r["N"] == "busco":
-                busco[r["genome"]] = val
+                busco[r["genome"]].append(val)
             else:
                 pasa[r["genome"]][int(r["N"])].append(val)
                 rows_by_genome[r["genome"]].append(r)
 
     out = []
-    header = ["genome", "N", "draws", "f1_mean", "busco_f1", "delta_mean", "delta_lo95", "delta_hi95"]
+    header = ["genome", "N", "draws_pasa/busco", "f1_mean", "busco_f1", "delta_mean", "delta_lo95", "delta_hi95"]
     nstar = {}
     for g in sorted(pasa):
         if g not in busco:
             sys.stderr.write("no busco comparator for %s; skipped\n" % g)
             continue
-        b = busco[g]
+        bvals = busco[g]
+        b = sum(bvals) / len(bvals)
         per_n = []
         for n in sorted(pasa[g]):
             vals = pasa[g][n]
-            d = [v - b for v in vals]
-            mean = sum(d) / len(d)
-            if len(d) > 1:
-                boots = sorted(sum(rnd.choice(d) for _ in d) / len(d) for _ in range(a.boot))
+            mean = sum(vals) / len(vals) - b
+            if len(vals) > 1 or len(bvals) > 1:
+                # resample PASA draws and BUSCO repeats independently, so the
+                # comparator's run-to-run noise is part of the interval
+                boots = sorted(
+                    sum(rnd.choice(vals) for _ in vals) / len(vals)
+                    - sum(rnd.choice(bvals) for _ in bvals) / len(bvals)
+                    for _ in range(a.boot))
                 lo, hi = boots[int(0.025 * a.boot)], boots[int(0.975 * a.boot) - 1]
             else:
                 lo = hi = mean
+            d = vals
             per_n.append((n, lo))
-            out.append([g, n, len(d), "%.3f" % (sum(vals) / len(vals)), "%.3f" % b,
+            out.append([g, n, "%d/%d" % (len(d), len(bvals)), "%.3f" % (sum(vals) / len(vals)), "%.3f" % b,
                         "%.3f" % mean, "%.3f" % lo, "%.3f" % hi])
         # conservative N*: lower bound >= 0 at this N and all larger N
         cand = None
