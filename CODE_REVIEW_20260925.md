@@ -581,4 +581,4 @@ From 2026-09-25, all decisions and code changes are recorded in a shared, append
   - `~/projects/funannotate/funannotate-live-bam2gff3/CHANGELOG.md`, "Unreleased → Fixed": the R1 `bam2gff3` rewrite.
 
 ## 13. Assessment record (2026-09-26)
-The assessment of PASA-trained vs BUSCO-trained predictors, the value of RNA-seq evidence, and the performance of the fixes (accuracy and runtime) is recorded in `docs/assessment_2026-09/README.md`. The folder also holds the result tables it cites (`data/`), snapshots of both methods drafts, and the decision log.
+The assessment of PASA-trained vs BUSCO-trained predictors, the value of RNA-seq evidence, and the performance of the fixes (accuracy and runtime) moved to funannotate on 2026-09-26: Sphinx page `docs/assessment_pasa2.6_fun1.9.rst` and folder `docs/assessment_pasa2.6_fun1.9/` (nextgenusfs/funannotate, branch `target_1.9/rust_EVM_trinity_PASA`). It covers funannotate v1.9.0-rc.3 with PASApipeline v2.6.1-rc.2. `docs/assessment_2026-09/README.md` here is a pointer.
