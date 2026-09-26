@@ -579,3 +579,6 @@ From 2026-09-25, all decisions and code changes are recorded in a shared, append
 - **Changelogs:**
   - `../PASApipeline-r2/Changelog.txt`, "Unreleased" section: R2, F4 and the gmap crash fallback.
   - `~/projects/funannotate/funannotate-live-bam2gff3/CHANGELOG.md`, "Unreleased → Fixed": the R1 `bam2gff3` rewrite.
+
+## 13. Assessment record (2026-09-26)
+The assessment of PASA-trained vs BUSCO-trained predictors, the value of RNA-seq evidence, and the performance of the fixes (accuracy and runtime) is recorded in `docs/assessment_2026-09/README.md`. The folder also holds the result tables it cites (`data/`), snapshots of both methods drafts, and the decision log.
