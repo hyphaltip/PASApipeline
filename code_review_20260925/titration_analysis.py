@@ -79,6 +79,10 @@ def main():
         for r in csv.DictReader(fh, delimiter="\t"):
             if r[sn_col] in ("", "NA") or r[pr_col] in ("", "NA"):
                 continue
+            # skip failed runs: a crashed step must not count as low accuracy
+            if any(r.get(k, "0") not in ("0", "", None) for k in ("exit_stepA", "exit_stepB")):
+                sys.stderr.write("skipping failed run %s N=%s draw=%s\n" % (r["genome"], r["N"], r["draw"]))
+                continue
             val = f1(r[sn_col], r[pr_col])
             if r["N"] == "busco":
                 busco[r["genome"]] = val
