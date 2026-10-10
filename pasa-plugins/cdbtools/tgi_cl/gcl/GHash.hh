@@ -151,7 +151,7 @@ template <class OBJ> GHash<OBJ>::GHash(bool doFree) {
 
 // Resize table
 template <class OBJ> void GHash<OBJ>::Resize(int m){
-  register int i,n,p,x,h;
+  int i,n,p,x,h;
   GHashEntry *k;
   GASSERT(fCount<=fCapacity);
   if(m<DEF_HASH_SIZE) m=DEF_HASH_SIZE;
@@ -185,7 +185,7 @@ template <class OBJ> void GHash<OBJ>::Resize(int m){
 // add a new entry, leave it alone if already existing
 template <class OBJ> const OBJ* GHash<OBJ>::Add(const char* ky,
                       const OBJ* pdata,bool mrk){
-  register int p,i,x,h,n;
+  int p,i,x,h,n;
   if(!ky) GError("GHash::insert: NULL key argument.\n");
   GASSERT(fCount<fCapacity);
   h=strhash(ky);
@@ -226,7 +226,7 @@ template <class OBJ> const OBJ* GHash<OBJ>::Add(const char* ky,
 
 template <class OBJ> const OBJ* GHash<OBJ>::shkAdd(const char* ky,
                       const OBJ* pdata,bool mrk){
-  register int p,i,x,h,n;
+  int p,i,x,h,n;
   if(!ky) GError("GHash::insert: NULL key argument.\n");
   GASSERT(fCount<fCapacity);
   h=strhash(ky);
@@ -268,7 +268,7 @@ template <class OBJ> const OBJ* GHash<OBJ>::shkAdd(const char* ky,
 
 // Add or replace entry
 template <class OBJ>  OBJ* GHash<OBJ>::Replace(const char* ky,const OBJ* pdata, bool mrk){
-  register int p,i,x,h,n;
+  int p,i,x,h,n;
   if(!ky){ GError("GHash::replace: NULL key argument.\n"); }
   GASSERT(fCount<fCapacity);
   h=strhash(ky);
@@ -310,7 +310,7 @@ template <class OBJ>  OBJ* GHash<OBJ>::Replace(const char* ky,const OBJ* pdata, 
 
 // Remove entry
 template <class OBJ> OBJ* GHash<OBJ>::Remove(const char* ky){
-  register int p,x,h,n;
+  int p,x,h,n;
   if(!ky){ GError("GHash::remove: NULL key argument.\n"); }
   if(0<fCount){
     h=strhash(ky);
@@ -345,7 +345,7 @@ template <class OBJ> OBJ* GHash<OBJ>::Remove(const char* ky){
 
 // Find entry
 template <class OBJ> bool GHash<OBJ>::hasKey(const char* ky) {
-  register int p,x,h,n;
+  int p,x,h,n;
   if(!ky){ GError("GHash::find: NULL key argument.\n"); }
   if(0<fCount){
     h=strhash(ky);
@@ -368,7 +368,7 @@ template <class OBJ> bool GHash<OBJ>::hasKey(const char* ky) {
 }
 
 template <class OBJ> OBJ* GHash<OBJ>::Find(const char* ky){
-  register int p,x,h,n;
+  int p,x,h,n;
   if(!ky){ GError("GHash::find: NULL key argument.\n"); }
   if(0<fCount){
     h=strhash(ky);
@@ -396,7 +396,7 @@ template <class OBJ> void GHash<OBJ>::startIterate() {// initialize a key iterat
 }
 
 template <class OBJ> char* GHash<OBJ>::NextKey() {
- register int pos=fCurrentEntry;
+ int pos=fCurrentEntry;
  while (pos<fCapacity && hash[pos].hash<0) pos++;
  if (pos==fCapacity) {
                  fCurrentEntry=fCapacity;
@@ -409,7 +409,7 @@ template <class OBJ> char* GHash<OBJ>::NextKey() {
 }
 
 template <class OBJ> OBJ* GHash<OBJ>::NextData() {
- register int pos=fCurrentEntry;
+ int pos=fCurrentEntry;
  while (pos<fCapacity && hash[pos].hash<0) pos++;
  if (pos==fCapacity) {
                  fCurrentEntry=fCapacity;
@@ -423,7 +423,7 @@ template <class OBJ> OBJ* GHash<OBJ>::NextData() {
 }
 
 template <class OBJ> GHashEntry* GHash<OBJ>::NextEntry() {
- register int pos=fCurrentEntry;
+ int pos=fCurrentEntry;
  while (pos<fCapacity && hash[pos].hash<0) pos++;
  if (pos==fCapacity) {
                  fCurrentEntry=fCapacity;
@@ -438,7 +438,7 @@ template <class OBJ> GHashEntry* GHash<OBJ>::NextEntry() {
 
 // Get first non-empty entry
 template <class OBJ> int GHash<OBJ>::First() const {
-  register int pos=0;
+  int pos=0;
   while(pos<fCapacity){ if(0<=hash[pos].hash) break; pos++; }
   GASSERT(fCapacity<=pos || 0<=hash[pos].hash);
   return pos;
@@ -446,7 +446,7 @@ template <class OBJ> int GHash<OBJ>::First() const {
 
 // Get last non-empty entry
 template <class OBJ> int GHash<OBJ>::Last() const {
-  register int pos=fCapacity-1;
+  int pos=fCapacity-1;
   while(0<=pos){ if(0<=hash[pos].hash) break; pos--; }
   GASSERT(pos<0 || 0<=hash[pos].hash);
   return pos;
@@ -473,7 +473,7 @@ template <class OBJ> int GHash<OBJ>::Prev(int pos) const {
 
 // Remove all
 template <class OBJ> void GHash<OBJ>::Clear(){
-  register int i;
+  int i;
   for(i=0; i<fCapacity; i++){
     if(hash[i].hash>=0){ 
       if (hash[i].keyalloc) GFREE((hash[i].key));
@@ -530,7 +530,7 @@ void GHash::Load(Stream& store){
 
 // Destroy table
 template <class OBJ> GHash<OBJ>::~GHash(){
-  register int i;
+  int i;
   for(i=0; i<fCapacity; i++){
     if(hash[i].hash>=0){
       if (hash[i].keyalloc) GFREE((hash[i].key));

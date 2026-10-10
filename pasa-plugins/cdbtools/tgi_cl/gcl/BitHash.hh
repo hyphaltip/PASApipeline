@@ -102,7 +102,7 @@ template <class OBJ> GNumHash<OBJ>::GNumHash(int cap, GFreeProc* freeProc) {
 // add a new entry, leave it alone if already existing
 template <class OBJ> const OBJ* GNumHash<OBJ>::Add(int ky,
                       const OBJ* pdata){
-  register int h;
+  int h;
   HashNode* node;
   GASSERT(fCount<fCapacity);
   h=ky/32;
@@ -145,7 +145,7 @@ template <class OBJ> const OBJ* GNumHash<OBJ>::Add(int ky,
 
 // Add or replace entry
 template <class OBJ>  OBJ* GNumHash<OBJ>::Replace(int ky,const OBJ* pdata, bool mrk){
-  register int p,i,x,h,n;
+  int p,i,x,h,n;
   GASSERT(fCount<fCapacity);
   //h=strhash(ky);
   h=ky;
@@ -187,7 +187,7 @@ template <class OBJ>  OBJ* GNumHash<OBJ>::Replace(int ky,const OBJ* pdata, bool 
 
 // Remove entry
 template <class OBJ> OBJ* GNumHash<OBJ>::Remove(int ky){
-  register int p,x,h,n;
+  int p,x,h,n;
   //if(!ky){ GError("GNumHash::remove: NULL key argument.\n"); }
   if(0<fCount){
     //h=strhash(ky);
@@ -222,7 +222,7 @@ template <class OBJ> OBJ* GNumHash<OBJ>::Remove(int ky){
 
 // Find entry
 template <class OBJ> bool GNumHash<OBJ>::hasKey(int ky) {
-  register int p,x,h,n;
+  int p,x,h,n;
   //if(!ky){ GError("GNumHash::find: NULL key argument.\n"); }
   if(0<fCount){
     //h=strhash(ky);
@@ -246,7 +246,7 @@ template <class OBJ> bool GNumHash<OBJ>::hasKey(int ky) {
 }
 
 template <class OBJ> OBJ* GNumHash<OBJ>::Find(int ky){
-  register int p,x,h,n;
+  int p,x,h,n;
   //if(!ky){ GError("GNumHash::find: NULL key argument.\n"); }
   if(0<fCount){
     //h=strhash(ky);
@@ -275,7 +275,7 @@ template <class OBJ> void GNumHash<OBJ>::startIterate() {// initialize a key ite
 }
 
 template <class OBJ> int GNumHash<OBJ>::NextKey() {
- register int pos=fCurrentEntry;
+ int pos=fCurrentEntry;
  while (pos<fCapacity && hash[pos].hash<0) pos++;
  if (pos==fCapacity) {
                  fCurrentEntry=fCapacity;
@@ -288,7 +288,7 @@ template <class OBJ> int GNumHash<OBJ>::NextKey() {
 }
 
 template <class OBJ> const OBJ* GNumHash<OBJ>::NextData() {
- register int pos=fCurrentEntry;
+ int pos=fCurrentEntry;
  while (pos<fCapacity && hash[pos].hash<0) pos++;
  if (pos==fCapacity) {
                  fCurrentEntry=fCapacity;
@@ -302,7 +302,7 @@ template <class OBJ> const OBJ* GNumHash<OBJ>::NextData() {
 }
 
 template <class OBJ> const GIHashEntry* GNumHash<OBJ>::NextEntry() {
- register int pos=fCurrentEntry;
+ int pos=fCurrentEntry;
  while (pos<fCapacity && hash[pos].hash<0) pos++;
  if (pos==fCapacity) {
                  fCurrentEntry=fCapacity;
@@ -317,7 +317,7 @@ template <class OBJ> const GIHashEntry* GNumHash<OBJ>::NextEntry() {
 
 // Get first non-empty entry
 template <class OBJ> int GNumHash<OBJ>::First() const {
-  register int pos=0;
+  int pos=0;
   while(pos<fCapacity){ if(0<=hash[pos].hash) break; pos++; }
   GASSERT(fCapacity<=pos || 0<=hash[pos].hash);
   return pos;
@@ -325,7 +325,7 @@ template <class OBJ> int GNumHash<OBJ>::First() const {
 
 // Get last non-empty entry
 template <class OBJ> int GNumHash<OBJ>::Last() const {
-  register int pos=fCapacity-1;
+  int pos=fCapacity-1;
   while(0<=pos){ if(0<=hash[pos].hash) break; pos--; }
   GASSERT(pos<0 || 0<=hash[pos].hash);
   return pos;
@@ -352,7 +352,7 @@ template <class OBJ> int GNumHash<OBJ>::Prev(int pos) const {
 
 // Remove all
 template <class OBJ> void GNumHash<OBJ>::Clear(){
-  register int i;
+  int i;
   for(i=0; i<fCapacity; i++){
     if(hash[i].hash>=0){
       if (hash[i].keyalloc) GFREE((hash[i].key));
@@ -372,7 +372,7 @@ template <class OBJ> void GNumHash<OBJ>::Clear(){
 
 // Destroy table
 template <class OBJ> GNumHash<OBJ>::~GNumHash(){
-  register int i;
+  int i;
   for(i=0; i<fCapacity; i++){
     if(hash[i].hash>=0){
       if (FREEDATA) (*fFreeProc)(hash[i].data);

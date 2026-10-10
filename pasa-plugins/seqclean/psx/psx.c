@@ -149,7 +149,7 @@ void wait_then_exit();
 /* A function used to print a standard error message, along with specifying
 where they made there mistake on the command line. */
 
-usagerr(err)
+int usagerr(err)
 
 int err;
 
@@ -237,7 +237,7 @@ int exit_status;
   exit(exit_status);
 }
 
-main(argc, argv)
+int main(argc, argv)
 
 int argc;
 char ** argv;

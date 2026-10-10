@@ -364,8 +364,8 @@ GString& GString::appendfmt(const char *fmt,...) {
   }
 
 GString& GString::trim(char c) {
- register int istart;
- register int iend;
+ int istart;
+ int iend;
  for (istart=0; istart<length() && chars()[istart]==c;istart++);
  if (istart==length()) {
        make_unique(); //edit operation ahead
@@ -384,8 +384,8 @@ GString& GString::trim(char c) {
  }
 
 GString& GString::trim(const char* c) {
- register int istart;
- register int iend;
+ int istart;
+ int iend;
  for (istart=0; istart<length() && strchr(c, chars()[istart])!=NULL ;istart++);
  if (istart==length()) {
         replace_data(0); //string was entirely trimmed
@@ -404,8 +404,8 @@ GString& GString::trim(const char* c) {
 
 GString& GString::trimR(char c) {
  //only trim the right end
- //register int istart;
- register int iend;
+ //int istart;
+ int iend;
  for (iend=length()-1; iend>=0 && chars()[iend]==c;iend--);
  if (iend==-1) {
        replace_data(0); //string was entirely trimmed
@@ -423,7 +423,7 @@ GString& GString::trimR(char c) {
  }
 
 GString& GString::trimR(const char* c) {
- register int iend;
+ int iend;
  for (iend=length()-1; iend>=0 && strchr(c,chars()[iend])!=NULL;iend--);
  if (iend==-1) {
        replace_data(0); //string was entirely trimmed
@@ -440,7 +440,7 @@ GString& GString::trimR(const char* c) {
  }
 
 GString& GString::trimL(char c) {
- register int istart;
+ int istart;
  for (istart=0; istart<length() && chars()[istart]==c;istart++);
  if (istart==length()) {
        replace_data(0); //string was entirely trimmed
@@ -457,7 +457,7 @@ GString& GString::trimL(char c) {
  }
 
 GString& GString::trimL(const char* c) {
- register int istart;
+ int istart;
  for (istart=0; istart<length() && strchr(c,chars()[istart])!=NULL;istart++);
  if (istart==length()) {
        replace_data(0); //string was entirely trimmed
@@ -598,7 +598,7 @@ bool GString::is_space() const {
     if (my_data == &null_data)
         return false;
 
-    for (register const char *p = chars(); *p; p++)
+    for (const char *p = chars(); *p; p++)
         if (!isspace(*p))
             return false;
 
@@ -889,7 +889,7 @@ GString& GString::append(const GString& s) {
 
 GString& GString::upper() {
   make_unique(); //edit operation ahead
-  for (register char *p = chrs(); *p; p++)
+  for (char *p = chrs(); *p; p++)
             *p = (char) toupper(*p);
 
     return *this;
@@ -900,7 +900,7 @@ GString& GString::upper() {
 GString& GString::lower() {
     make_unique();
 
-    for (register char *p = chrs(); *p; p++)
+    for (char *p = chrs(); *p; p++)
           *p = (char) tolower(*p);
 
     return *this;

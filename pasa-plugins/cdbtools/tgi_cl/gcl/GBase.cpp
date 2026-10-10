@@ -309,7 +309,7 @@ char* reverseChars(char* str, int slen) {
   if (slen==0) slen=strlen(str);
   int l=0;
   int r=slen-1;
-  register char c;
+  char c;
   while (l<r) {
      c=str[l];str[l]=str[r];
      str[r]=c;
@@ -338,8 +338,8 @@ char* rstrstr(char* rstart, char *lend, char* substr) {  /*like strstr, but star
 
 //hash function used for strings in GHash
 int strhash(const char* str){
-  register int h=0;
-  register int g;
+  int h=0;
+  int g;
   while (*str) {
     h=(h<<4)+*str++;
     g=h&0xF0000000;
