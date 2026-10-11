@@ -27,10 +27,24 @@ CXX ?= g++
 # portable across a heterogeneous cluster and across conda/container hosts.
 # -mtune=native only changes scheduling, never the instruction set, so it is
 # safe to combine.  Override ARCHFLAGS=-march=native for a single-machine build.
+# -msse4.2 exists only on x86-64; on arm64 (Apple Silicon, aarch64) POPCNT is native.
+ifneq ($(filter x86_64 amd64 i386 i686,$(shell uname -m)),)
 ARCHFLAGS ?= -msse4.2 -mtune=native
+else
+ARCHFLAGS ?=
+endif
 
 CFLAGS = -O3 $(ARCHFLAGS) -flto -funroll-loops -fopenmp -std=c++11
 LDFLAGS = -O3 $(ARCHFLAGS) -flto -fopenmp
+
+# macOS: dyld has no fallback search path for @rpath libraries, and libomp (conda's
+# llvm-openmp) is linked as @rpath/libomp.dylib. Without an LC_RPATH the binary builds and
+# then dies at start: "Library not loaded: @rpath/libomp.dylib". Add the conda library
+# directory (or RPATH_DIRS) as an rpath. Linux finds the library through other paths.
+ifeq ($(shell uname -s),Darwin)
+RPATH_DIRS ?= $(if $(CONDA_PREFIX),$(CONDA_PREFIX)/lib)
+LDFLAGS += $(foreach d,$(RPATH_DIRS),-Wl,-rpath,$(d))
+endif
 
 
 DEPEND_FILES = *.cpp *.c *.h
