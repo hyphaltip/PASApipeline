@@ -41,9 +41,9 @@ rust:
 rust-test:
 	cd pasa_rust && cargo test --release
 
-## Run Perl library regression tests (needs Test::More)
+## Run Perl library tests: PerlLib/t and tests/perl (needs Test::More)
 perl-test:
-	prove -v tests/perl
+	prove -v PerlLib/t tests/perl
 
 clean:
 	cd pasa_cpp && $(MAKE) clean

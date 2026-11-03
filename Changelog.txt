@@ -1,5 +1,82 @@
 ############
-## Unreleased: fork branch fix/unspliced-orient-clustering (base 23d67c0 = v2.6.1). Not committed or merged yet.
+## PASA release v2.6.2 (hyphaltip fork, branch rust_optimize), Nov 3, 2026
+##
+## Bug-fix release. Upgrade from any v2.6.1-rc.N: rc.1 to rc.4 give wrong CDS
+## phases and scrambled proteins for minus-strand genes in the annotation
+## update step (fix 1). Do not reuse a PASA database made by rc.N for annotation
+## comparison: its stored gene objects hold the wrong phases. Run both
+## annotation-compare rounds again.
+## Found with funannotate update on five Mucorales genomes (2026-11-02).
+## Tests: make perl-test (prove PerlLib/t tests/perl).
+
+- FIX (serious): minus-strand CDS phases and CDS/protein sequence in Gene_obj.pm
+  Regression from fork commit f7cede7 ("first tier perl optimization"), in all
+  v2.6.1-rc.N. Upstream PASA is not affected.
+  Problem 1: get_exons() cached its sorted exon list in $self->{_sorted_exons}.
+  The minus-strand reversal ran only when the cache was built, and nothing
+  cleared the cache. trivial_refinement() calls get_exons() before it sets the
+  strand, so a new minus-strand gene cached + strand order. set_CDS_phases()
+  then counted phases from the 3' end.
+  Problem 2: create_CDS_sequence()/create_cDNA_sequence() no longer sorted exons
+  in ascending order before joining and reverse-complementing them. Objects with
+  a correct 5'->3' cache (clones, objects read back from the PASA database) got
+  a CDS/protein with the exons in reverse order.
+  Effect (Absidia caerulea RSA 138, funannotate update):
+    - 5,468 of 6,067 minus-strand multi-exon PASA updates had wrong phases;
+      the other 599 were correct only by chance.
+    - 3,535 tbl2asn InternalStop errors (6-22% of mRNAs in five genomes).
+    - cDNA_annotation_comparer.dbi compared scrambled proteins and rejected
+      valid updates (FBN33_012420: 37.3% protein overlap instead of 100%).
+    - has_5prime_UTR()/has_3prime_UTR() could read the wrong end of a gene.
+  Change: get_exons() sorts on every call again (no cache); the CDS/cDNA
+  builders sort exons in ascending order again. Measured: no speed change
+  (13,344 genes parsed, sequences built, GFF3 written: 6.4-6.8 s with or
+  without the cache).
+  Not affected: funannotate train (TransDecoder uses its own Gene_obj.pm).
+  Files: PerlLib/Gene_obj.pm; tests/perl/gene_obj_strand_phase.t (new, 31 checks)
+
+- FIX: CDS phases of GFF3 input written back with 1 and 2 swapped (GFF3_utils.pm)
+  Also present in upstream PASApipeline master.
+  Problem: Gene_obj {phase} is the codon position of the first CDS base (0,1,2);
+  to_GFF3_format() converts it to the GFF3 phase (bases to skip) by swapping 1
+  and 2. GFF3_utils::index_GFF3_gene_objs() stored the GFF3 phase without
+  converting it. Every parsed model with a phase 1 or 2 came out swapped, for
+  example the "# ORIGINAL" models in gene_structures_post_PASA_updates.*.gff3.
+  Effect: 2,253 of 3,327 unchanged models swapped (Absidia, round 1); a parse
+  and write of 67,380 CDS segments changed 31,402 phases (after the fix: 0).
+  Change: store (3 - gff3_phase) % 3 when parsing.
+  Not changed: the copies PasaWeb/cgi-bin/PerlLib/GFF3_utils.pm and
+  pasa-plugins/transdecoder/PerlLib/GFF3_utils2.pm.
+  Files: PerlLib/GFF3_utils.pm; tests/perl/gff3_phase_roundtrip.t (new, 22 checks)
+
+- FIX: first-segment phase of 5'-partial models (Gene_obj::set_CDS_phases)
+  Problem: the first CDS segment was stored as bases to skip (GFF3 sense) while
+  all later segments and all readers use the codon position. A model whose
+  first CDS base is mid-codon was written with the wrong GFF3 phase and GTF
+  frame. PASA's own update models start at a full codon and were not affected;
+  GTF output and misc_utilities converters were. Also present upstream.
+  Change: store (3 - skip) % 3; the stop-codon check in to_GTF_format()
+  converts back. Complete models are unchanged.
+  Files: PerlLib/Gene_obj.pm; covered by tests/perl/gff3_phase_roundtrip.t
+
+- FIX: compressed FASTA in Fasta_retriever.pm
+  Problem: get_seq() on a .gz/.bz2 file opened a new stream at the file start
+  and stopped at the first header, so it returned "" for every accession.
+  Without a .fai, the compressed bytes were indexed as text.
+  Change: compressed input is detected by extension or magic bytes (gzip/bgzip
+  1f 8b, bzip2 BZh), opened through zcat/bzcat, indexed by header, and read to
+  the wanted header. A one-time warning says each lookup rereads the file.
+  get_seq() now dies on an empty result (for example a stale .fai) instead of
+  returning "" (this also applies to plain files).
+  Files: PerlLib/Fasta_retriever.pm; tests/perl/fasta_retriever.t (new, 23 checks)
+
+- Build: `make perl-test` runs PerlLib/t and tests/perl.
+
+- Earlier in this fork: v2.6.1-rc.3 (cdbtools/psx build with clang/C++17 on
+  macOS) and v2.6.1-rc.4 (pasa_cpp rpath on macOS; no -msse4.2 on non-x86).
+
+############
+## v2.6.1-rc.2 (fork; base 23d67c0 = v2.6.1): opt-in clustering flags and gmap crash fallback
 ## Review and evidence: CODE_REVIEW_20260925.md; decision log
 ## /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_pasa_rust_vs_perl/DECISIONS.md (D15, D18, D22, D26-D28, D31)
 
