@@ -228,7 +228,10 @@ my $counter = 0;
                             unless ($phase == 0 || $phase == 1 || $phase == 2) {
                                 confess "Error, should have phase set for cds $gene_id $transcript_id $end5, but I do not know what $phase is. ";
                             }
-                            $cds->set_phase($phase);
+                            ## GFF3 phase = bases to skip; Gene_obj {phase} = codon position of the
+                            ## first CDS base (0,1,2 = first, second, third). Convert: 1 <-> 2.
+                            ## to_GFF3_format converts back, so a GFF3 round trip is unchanged.
+                            $cds->set_phase((3 - $phase) % 3);
                         }
                     }
                 }

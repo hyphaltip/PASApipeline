@@ -3158,7 +3158,8 @@ sub to_GTF_format {
         if (@found_stop) {
             # got a stop codon.
             # check to see that the stop codon is in-frame.
-            if ((length($cds_seq) - $first_phase) % 3 == 0) { # yes, stop is in frame.
+            ## {phase} is a codon position; (3 - phase) % 3 = bases to skip before the first full codon
+            if ((length($cds_seq) - (3 - $first_phase) % 3) % 3 == 0) { # yes, stop is in frame.
                 
                 my @stop_codon_coords = $gene_obj->get_stop_codon_coords();
                 foreach my $stop_pair (@stop_codon_coords) {
@@ -4595,7 +4596,9 @@ sub set_CDS_phases {
         }
         
         my $cds_obj = shift @cds_objs;
-        $cds_obj->{phase} = $first_phase;
+        ## $first_phase = bases to skip (GFF3 sense); store the codon position of the
+        ## first CDS base, the same convention as the later segments and to_GFF3_format.
+        $cds_obj->{phase} = (3 - $first_phase) % 3;
         my $cds_length = abs ($cds_obj->{end3} - $cds_obj->{end5}) + 1;
         $cds_length -= $first_phase;
         
