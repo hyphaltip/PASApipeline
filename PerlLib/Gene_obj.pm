@@ -927,15 +927,16 @@ B<Returns:> @exons
 sub get_exons {
     my ($self) = shift;
     if ($self->{mRNA_exon_objs} && @{$self->{mRNA_exon_objs}}) {
-        unless ($self->{_sorted_exons}) {
-            my @exons = @{$self->{mRNA_exon_objs}};
-            @exons = sort {$a->{end5}<=>$b->{end5}} @exons;
-            if ($self->{strand} eq '-') {
-                @exons = reverse @exons;
-            }
-            $self->{_sorted_exons} = \@exons;
+        ## Sort on every call. Do not cache: the strand is set after the first
+        ## call (trivial_refinement), exon lists are replaced and exon
+        ## coordinates change in place, and Storable writes any cache into the
+        ## PASA database. A cache here gave wrong CDS phases and scrambled
+        ## proteins for minus-strand genes (see tests/perl/gene_obj_strand_phase.t).
+        my @exons = sort {$a->{end5}<=>$b->{end5}} @{$self->{mRNA_exon_objs}};
+        if ($self->{strand} eq '-') {
+            @exons = reverse @exons;
         }
-        return @{$self->{_sorted_exons}};
+        return @exons;
     } else {
         return (); # empty array
     }
@@ -1269,7 +1270,9 @@ sub create_cDNA_sequence {
     my @exons = $self->get_exons();
     my $strand = $self->{strand};
     my $cDNA_seq = "";
-    foreach my $exon_obj (@exons) {
+    ## Join exons in ascending genomic order; the minus strand is
+    ## reverse-complemented as a whole below. get_exons() is 5'->3'.
+    foreach my $exon_obj (sort {$a->{end5}<=>$b->{end5}} @exons) {
         my $c1 = $exon_obj->{end5};
         my $c2 = $exon_obj->{end3};
         ## sequence retrieval coordinates must be in forward orientation
@@ -1310,7 +1313,9 @@ sub create_CDS_sequence {
     my @exons = $self->get_exons();
     my $strand = $self->{strand};
     my $cds_seq = "";
-    foreach my $exon_obj (@exons) {
+    ## Join exons in ascending genomic order; the minus strand is
+    ## reverse-complemented as a whole below. get_exons() is 5'->3'.
+    foreach my $exon_obj (sort {$a->{end5}<=>$b->{end5}} @exons) {
         my $CDS_obj = $exon_obj->get_CDS_obj();
         if (ref $CDS_obj) {
             my ($c1, $c2) = $CDS_obj->get_CDS_end5_end3();
